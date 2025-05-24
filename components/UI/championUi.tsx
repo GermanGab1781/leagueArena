@@ -1,11 +1,11 @@
 export default function ChampionUi(
-    { champion, setChampion, isPlayer, animData, setAnim }:
+    { champion, setChampion, isPlayer, championData, setAnimations }:
         {
             champion: champion,
             setChampion: React.Dispatch<React.SetStateAction<champion>>,
             isPlayer: boolean,
-            animData:any,
-            setAnim: React.Dispatch<React.SetStateAction<string>>
+            championData:ChampionData,
+            setAnimations: React.Dispatch<React.SetStateAction<string[]>>
         }
 ) {
     function getHealthColor(ratio: number) {
@@ -26,11 +26,11 @@ export default function ChampionUi(
             {/* Skills */}
             {/* isPlayer && */}
             <div className="flex">
-                <div onClick={() => setAnim(animData.animations.attack)} className="border bg-red-600 p-2 cursor-pointer">Attack</div>
-                <div onClick={() => setAnim(animData.animations.Q)} className="border bg-red-600 p-2 cursor-pointer">Q</div>
-                <div onClick={() => setAnim(animData.animations.W)} className="border bg-red-600 p-2 cursor-pointer">W</div>
-                <div onClick={() => setAnim(animData.animations.E)} className="border bg-red-600 p-2 cursor-pointer">E</div>
-                <div onClick={() => setAnim(animData.animations.R)} className="border bg-red-600 p-2 cursor-pointer">R</div>
+                <div onClick={() => setAnimations(championData.animations.attack)} className="border bg-red-600 p-2 cursor-pointer">Attack</div>
+                <div onClick={() => setAnimations(championData.animations.Q)} className="border bg-red-600 p-2 cursor-pointer">Q</div>
+                <div onClick={() => setAnimations(championData.animations.W)} className="border bg-red-600 p-2 cursor-pointer">W</div>
+                <div onClick={() => setAnimations(championData.animations.E)} className="border bg-red-600 p-2 cursor-pointer">E</div>
+                <div onClick={() => setAnimations(championData.animations.R)} className="border bg-red-600 p-2 cursor-pointer">R</div>
             </div>
 
 

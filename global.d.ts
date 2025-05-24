@@ -42,17 +42,18 @@ type ChampionModelProps = {
     data: ChampionData;
     position?: [number, number, number];
     rotation?: [number, number, number];
-    currentAnimation: string;
-    setAnim: React.Dispatch<React.SetStateAction<string>>;
+    animationsActive: string[];
+    setAnimations: React.Dispatch<React.SetStateAction<string[]>>;
 };
+/* Animations data */
 type ChampionAnimations = {
-    idle: string;
-    attack: string;
-    death?: string;
-    Q: string;
-    W: string;
-    E: string;
-    R: string;
+    idle: string[];
+    attack: string[];
+    death?: string[];
+    Q: string[];
+    W: string[];
+    E: string[];
+    R: string[];
 };
 
 type ChampionData = {
