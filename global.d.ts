@@ -38,22 +38,34 @@ type debuff = {
 }
 
 /* 3D info */
-type ChampionModelProps = {
-    data: ChampionData;
-    position?: [number, number, number];
-    rotation?: [number, number, number];
-    animationsActive: string[];
-    setAnimations: React.Dispatch<React.SetStateAction<string[]>>;
+type CombatProps = {
+    player: champion;
+    setPlayer: React.Dispatch<React.SetStateAction<champion>>;
+    enemy: champion;
+    setEnemy: React.Dispatch<React.SetStateAction<champion>>;
 };
-/* Animations data */
+type ChampionModelProps = {
+  data: ChampionData;
+  position: [number, number, number];
+  rotation: [number, number, number];
+  animationsActive: AnimationStep[];
+  setAnimations: (animations: AnimationStep[]) => void;
+};
+
+/* Animation types */
+type AnimationStep = {
+    name: string;
+    moveTo?: { x?: number; y?: number; z?: number; duration: number };
+};
+
 type ChampionAnimations = {
-    idle: string[];
-    attack: string[];
-    death?: string[];
-    Q: string[];
-    W: string[];
-    E: string[];
-    R: string[];
+    idle: AnimationStep[];
+    attack: AnimationStep[];
+    death?: AnimationStep[];
+    Q: AnimationStep[];
+    W: AnimationStep[];
+    E: AnimationStep[];
+    R: AnimationStep[];
 };
 
 type ChampionData = {

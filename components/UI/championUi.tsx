@@ -5,7 +5,7 @@ export default function ChampionUi(
             setChampion: React.Dispatch<React.SetStateAction<champion>>,
             isPlayer: boolean,
             championData:ChampionData,
-            setAnimations: React.Dispatch<React.SetStateAction<string[]>>
+            setAnimations: React.Dispatch<React.SetStateAction<AnimationStep[]>>
         }
 ) {
     function getHealthColor(ratio: number) {
