@@ -56,6 +56,7 @@ type ChampionModelProps = {
 type AnimationStep = {
     name: string;
     moveTo?: { x?: number; y?: number; z?: number; duration: number };
+    rotateTo?: { x?: number; y?: number; z?: number; duration: number };
 };
 
 type ChampionAnimations = {

@@ -15,12 +15,13 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
   const movementStartTime = useRef<number | null>(null);
   const movementStartPos = useRef<THREE.Vector3 | null>(null);
 
+  const rotationStartTime = useRef<number | null>(null);
+  const rotationStartRot = useRef<THREE.Euler | null>(null);
+
   const { scene, animations } = useGLTF(data.modelPath);
   const { actions, mixer } = useAnimations(animations, ref);
   const idleName = data.animations.idle[0];
-   console.log('Animations in model:', data.modelPath, animations.map(a => a.name))
 
-  // Sync external animation trigger
   useEffect(() => {
     setCurrentAnimation(animationsActive);
     setAnimationIndex(0);
@@ -33,7 +34,6 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
     }
   }, []);
 
-  // Sync position ref if prop changes
   useEffect(() => {
     currentPos.current.set(...position);
   }, [position]);
@@ -47,8 +47,9 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
     const animStep = currentAnimation[animationIndex];
     const currentAction = actions[animStep.name];
     const idleAction = actions[idleName.name];
+    const clip = animations.find(a => a.name === animStep.name);
 
-    if (!currentAction) {
+    if (!currentAction || !clip) {
       console.warn('Animation not found:', animStep.name);
       return;
     }
@@ -61,19 +62,33 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
       currentAction.setLoop(THREE.LoopRepeat, Infinity);
       currentAction.clampWhenFinished = false;
     } else {
-      currentAction.setLoop(THREE.LoopOnce,1);
+      currentAction.setLoop(THREE.LoopOnce, 1);
       currentAction.clampWhenFinished = true;
+    }
+
+    if (animStep.moveTo?.duration && clip.duration > 0) {
+      const playbackSpeed = clip.duration / animStep.moveTo.duration;
+      currentAction.setEffectiveTimeScale(playbackSpeed);
+    } else {
+      currentAction.setEffectiveTimeScale(1);
     }
 
     currentAction.play();
 
-    // Start movement if applicable
     if (animStep.moveTo && ref.current) {
       movementStartPos.current = ref.current.position.clone();
       movementStartTime.current = performance.now();
     } else {
       movementStartPos.current = null;
       movementStartTime.current = null;
+    }
+
+    if (animStep.rotateTo && ref.current) {
+      rotationStartRot.current = ref.current.rotation.clone();
+      rotationStartTime.current = performance.now();
+    } else {
+      rotationStartRot.current = null;
+      rotationStartTime.current = null;
     }
 
     const onFinished = (e: THREE.Event) => {
@@ -98,9 +113,8 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
     return () => {
       mixer.removeEventListener('finished', onFinished);
     };
-  }, [actions, animationIndex, currentAnimation, mixer, data.animations.idle, setAnimations]);
+  }, [actions, animationIndex, currentAnimation, mixer, data.animations.idle, setAnimations, animations]);
 
-  // Handle smooth movement each frame
   useFrame(() => {
     if (!ref.current) return;
 
@@ -129,8 +143,37 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
         movementStartPos.current = null;
       }
     } else {
-      // No movement step — keep position consistent
       ref.current.position.copy(currentPos.current);
+    }
+
+    if (rotationStartRot.current && rotationStartTime.current !== null) {
+      const now = performance.now();
+      const animStep = currentAnimation[animationIndex];
+      if (!animStep.rotateTo) return;
+
+      const elapsed = (now - rotationStartTime.current) / 1000;
+      const duration = animStep.rotateTo.duration;
+      const progress = Math.min(elapsed / duration, 1);
+
+      const startRot = rotationStartRot.current;
+      const targetRot = new THREE.Euler(
+        THREE.MathUtils.degToRad(animStep.rotateTo.x ?? THREE.MathUtils.radToDeg(startRot.x)),
+        THREE.MathUtils.degToRad(animStep.rotateTo.y ?? THREE.MathUtils.radToDeg(startRot.y)),
+        THREE.MathUtils.degToRad(animStep.rotateTo.z ?? THREE.MathUtils.radToDeg(startRot.z))
+      );
+
+      const newRot = new THREE.Euler(
+        THREE.MathUtils.lerp(startRot.x, targetRot.x, progress),
+        THREE.MathUtils.lerp(startRot.y, targetRot.y, progress),
+        THREE.MathUtils.lerp(startRot.z, targetRot.z, progress)
+      );
+
+      ref.current.rotation.copy(newRot);
+
+      if (progress >= 1) {
+        rotationStartTime.current = null;
+        rotationStartRot.current = null;
+      }
     }
   });
 
@@ -138,7 +181,6 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
     <primitive
       ref={ref}
       object={scene}
-      // REMOVE position prop to prevent reset on re-render
       rotation={new THREE.Euler(...rotation.map(r => THREE.MathUtils.degToRad(r)))}
       scale={0.01}
     />
