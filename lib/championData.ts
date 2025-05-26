@@ -13,7 +13,7 @@ const steps = (
 /* Player euler : position={[-1, -1, 2]} rotation={[0, 140, 0]} */
 /* Enemy euler : position={[3, -1, -1]} rotation={[0, -50, 0]}*/
 
-export const championsData: Record<string, ChampionData> = {
+export const championsData: Record<string, ChampionModelData> = {
   garen: {
     name: 'Garen',
     modelPath: '/models/Garen/Garen.glb',

@@ -16,32 +16,31 @@ type champion = {
     stunned: boolean;
 }
 
-type skills = {
-    Q: attack | defense | debuf;
-    W: attack | defense | debuf;
-    E: attack | defense | debuf;
-    R: attack | defense | debuf;
-}
-type attack = {
-    type: "attack";
-    damage: number;
+type Skill = {
+    type: "attack" | "defense" | "debuff";
+    time: number;
+
+    // Attack-related
+    damage?: number;
     heal?: number;
     debuff?: number;
-    time: number;
-}
-type defense = {
-    type: "defense";
+
+    // Defense-related
     armorBoost?: number;
-    heal?: number;
     tenacity?: number;
-    time: number;
-}
-type debuff = {
-    type: "debuff";
+
+    // Debuff-related
     armorCrack?: number;
     tenacityCrack?: number;
-    time: number;
-}
+};
+
+type Skills = {
+    Q: Skill;
+    W: Skill;
+    E: Skill;
+    R: Skill;
+};
+
 
 /* 3D info */
 type CombatProps = {
@@ -56,12 +55,13 @@ type ChampionUiProps = {
     enemy: champion,
     setEnemy: React.Dispatch<React.SetStateAction<champion>>,
     isPlayer: boolean,
-    championData: ChampionData,
+    championModelData: ChampionData,
     setAnimations: React.Dispatch<React.SetStateAction<AnimationStep[]>>
+    setTurn:React.Dispatch<React.SetStateAction<turn>>
 }
 type MainUiProps = {
-    turn:turn;
-    setTurn:React.Dispatch<React.SetStateAction<turn>>,
+    turn: turn;
+    setTurn: React.Dispatch<React.SetStateAction<turn>>,
     player: champion;
     setPlayer: React.Dispatch<React.SetStateAction<champion>>;
     playerModelData: ChampionData;
@@ -96,7 +96,7 @@ type ChampionAnimations = {
     R: AnimationStep[];
 };
 
-type ChampionData = {
+type ChampionModelData = {
     name: string;
     modelPath: string;
     animations: ChampionAnimations;

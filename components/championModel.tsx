@@ -47,7 +47,7 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
     const animStep = currentAnimation[animationIndex];
     const currentAction = actions[animStep.name];
     const idleAction = actions[idleName.name];
-    const clip = animations.find(a => a.name === animStep.name);
+    const clip = animations.find((a: { name: string; }) => a.name === animStep.name);
 
     if (!currentAction || !clip) {
       console.warn('Animation not found:', animStep.name);

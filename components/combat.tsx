@@ -11,8 +11,8 @@ export default function Combat({ player, setPlayer, enemy, setEnemy }: CombatPro
     const playerKey = player.name.toLowerCase();
     const enemyKey = enemy.name.toLowerCase();
 
-    const playerModelData: ChampionData = championsData[playerKey];
-    const enemyModelData: ChampionData = championsData[enemyKey];
+    const playerModelData: ChampionModelData = championsData[playerKey];
+    const enemyModelData: ChampionModelData = championsData[enemyKey];
 
     // NOTE: animationsActive prop expects string[] (array of animation names), so map AnimationStep[] to string[] here
     const [playerModelAnim, setPlayerModelAnim] = useState<AnimationStep[]>(playerModelData.animations.idle);
