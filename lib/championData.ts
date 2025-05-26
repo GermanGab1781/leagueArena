@@ -10,6 +10,9 @@ const steps = (
     ...(rotation?.[i] ? { rotateTo: rotation[i] } : {}),
   }));
 
+/* Player euler : position={[-1, -1, 2]} rotation={[0, 140, 0]} */
+/* Enemy euler : position={[3, -1, -1]} rotation={[0, -50, 0]}*/
+
 export const championsData: Record<string, ChampionData> = {
   garen: {
     name: 'Garen',
@@ -36,14 +39,14 @@ export const championsData: Record<string, ChampionData> = {
       E: steps(
         [
           'garen_base_spell3_0.anm'
-          ,'garen_2013_run.anm'
+          , 'garen_2013_run.anm'
         ]
-        ,{
-          0:{x:2.4,z:-0.5, duration:3},
+        , {
+          0: { x: 2.4, z: -0.5, duration: 3 },
           1: { x: -1, z: 2, duration: 1.4 },
         },
         {
-          1:{y:-80,duration:0.7}
+          1: { y: -80, duration: 0.7 }
         }
       ),
       R: steps(['garen_2013_spell4.anm']),
@@ -67,8 +70,8 @@ export const championsData: Record<string, ChampionData> = {
           2: { x: 3, z: -1, duration: 1.5 },
         },
         {
-          
-          2: { y: -240, duration: 0.7 },
+
+          2: { y: -240, duration: 0.2 },
         }
       ),
       W: steps(
@@ -78,8 +81,8 @@ export const championsData: Record<string, ChampionData> = {
           'darius_run.anm'
         ],
         {
-          0: { x: -1, z: 2, duration: 2 },
-          2: { x: 3, z: -1, duration: 2 },
+          0: { x: 0.6, z: 0.5, duration: 2 },
+          2: { x: 3, z: -1, duration: 1.7 },
         },
         {
           2: { y: -230, duration: 0.5 },

@@ -12,7 +12,7 @@ export default function Home() {
     name: "Garen",
     maxHealth: 100,
     currentHealth: 100,
-    armor: 100,
+    armor: 15,
     tenacity: 0,
     stunned: false,
     skills: {
@@ -26,7 +26,7 @@ export default function Home() {
     name: "Darius",
     maxHealth: 100,
     currentHealth: 100,
-    armor: 60,
+    armor: 5,
     tenacity: 0,
     stunned: false,
     skills: {
@@ -42,7 +42,6 @@ export default function Home() {
   return (
     <div className="m-auto">
       <div>
-        {/* <TestViewer/> */}
         <Combat player={player} setPlayer={setPlayer} enemy={enemy} setEnemy={setEnemy} />
       </div>
     </div>

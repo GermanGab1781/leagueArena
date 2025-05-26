@@ -4,19 +4,21 @@ import { championsData } from '@/lib/championData';
 import React, { Suspense, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { ChampionModel } from "./championModel";
+import MainUi from "./UI/mainUi";
 
 
 export default function Combat({ player, setPlayer, enemy, setEnemy }: CombatProps) {
     const playerKey = player.name.toLowerCase();
     const enemyKey = enemy.name.toLowerCase();
 
-    const playerData: ChampionData = championsData[playerKey];
-    const enemyData: ChampionData = championsData[enemyKey];
+    const playerModelData: ChampionData = championsData[playerKey];
+    const enemyModelData: ChampionData = championsData[enemyKey];
 
     // NOTE: animationsActive prop expects string[] (array of animation names), so map AnimationStep[] to string[] here
-    const [playerAnim, setPlayerAnim] = useState<AnimationStep[]>(playerData.animations.idle);
-    const [enemyAnim, setEnemyAnim] = useState<AnimationStep[]>(enemyData.animations.idle);
+    const [playerModelAnim, setPlayerModelAnim] = useState<AnimationStep[]>(playerModelData.animations.idle);
+    const [enemyModelAnim, setEnemyModelAnim] = useState<AnimationStep[]>(enemyModelData.animations.idle);
 
+    const [turn, setTurn] = useState<turn>({ number: 1, playerTurn: true })
 
     return (
         <div className="w-full h-[95vh] border relative">
@@ -27,43 +29,29 @@ export default function Combat({ player, setPlayer, enemy, setEnemy }: CombatPro
                 <Suspense fallback={null}>
                     {/* Player model */}
                     <ChampionModel
-                        data={playerData}
+                        data={playerModelData}
                         position={[-1, -1, 2]}
                         rotation={[0, 140, 0]}
-                        animationsActive={playerAnim}
-                        setAnimations={setPlayerAnim}
+                        animationsActive={playerModelAnim}
+                        setAnimations={setPlayerModelAnim}
                     />
                     {/* Enemy model */}
                     <ChampionModel
-                        data={enemyData}
+                        data={enemyModelData}
                         position={[3, -1, -1]}
                         rotation={[0, -50, 0]}
-                        animationsActive={enemyAnim}
-                        setAnimations={setEnemyAnim}
+                        animationsActive={enemyModelAnim}
+                        setAnimations={setEnemyModelAnim}
                     />
                 </Suspense>
             </Canvas>
 
             {/* UI overlays */}
-            <div className="absolute left-5 bottom-[20%]">
-                <ChampionUi
-                    champion={player}
-                    setChampion={setPlayer}
-                    championData={playerData}
-                    setAnimations={setPlayerAnim}
-                    isPlayer={true}
-                />
-            </div>
-
-            <div className="absolute right-5 top-[20%]">
-                <ChampionUi
-                    champion={enemy}
-                    setChampion={setEnemy}
-                    championData={enemyData}
-                    setAnimations={setEnemyAnim}
-                    isPlayer={false}
-                />
-            </div>
+            <MainUi
+                turn={turn} setTurn={setTurn}
+                player={player} setPlayer={setPlayer} playerModelData={playerModelData} setPlayerModelAnim={setPlayerModelAnim}
+                enemy={enemy} setEnemy={setEnemy} enemyModelData={enemyModelData} setEnemyModelAnim={setEnemyModelAnim}
+            />
         </div>
     );
 }

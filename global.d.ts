@@ -1,3 +1,9 @@
+/* System */
+type turn = {
+    number: number;
+    playerTurn: boolean;
+}
+
 
 /* combat info */
 type champion = {
@@ -44,12 +50,33 @@ type CombatProps = {
     enemy: champion;
     setEnemy: React.Dispatch<React.SetStateAction<champion>>;
 };
+type ChampionUiProps = {
+    champion: champion,
+    setChampion: React.Dispatch<React.SetStateAction<champion>>,
+    enemy: champion,
+    setEnemy: React.Dispatch<React.SetStateAction<champion>>,
+    isPlayer: boolean,
+    championData: ChampionData,
+    setAnimations: React.Dispatch<React.SetStateAction<AnimationStep[]>>
+}
+type MainUiProps = {
+    turn:turn;
+    setTurn:React.Dispatch<React.SetStateAction<turn>>,
+    player: champion;
+    setPlayer: React.Dispatch<React.SetStateAction<champion>>;
+    playerModelData: ChampionData;
+    setPlayerModelAnim: SetStateAction<AnimationStep[]>;
+    enemyModelData: ChampionData;
+    setEnemyModelAnim: SetStateAction<AnimationStep[]>;
+    enemy: champion;
+    setEnemy: React.Dispatch<React.SetStateAction<champion>>;
+}
 type ChampionModelProps = {
-  data: ChampionData;
-  position: [number, number, number];
-  rotation: [number, number, number];
-  animationsActive: AnimationStep[];
-  setAnimations: (animations: AnimationStep[]) => void;
+    data: ChampionData;
+    position: [number, number, number];
+    rotation: [number, number, number];
+    animationsActive: AnimationStep[];
+    setAnimations: (animations: AnimationStep[]) => void;
 };
 
 /* Animation types */
