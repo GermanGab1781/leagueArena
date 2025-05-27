@@ -1,78 +1,152 @@
-export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isPlayer, championModelData, setAnimations }: ChampionUiProps) {
-    function getHealthColor(ratio: number) {
+import { useEffect, useState } from "react";
+
+export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isPlayer, championModelData, setAnimations, setTurn, turn }: ChampionUiProps) {
+    function getHealthColor(ratio: number): string {
         if (ratio <= 0.24) return 'bg-red-500';
         if (ratio <= 0.49) return 'bg-yellow-500';
         return 'bg-green-500';
     }
     const healthChampion = champion.currentHealth / champion.maxHealth;
     /* make a single skill function that takes the type then it process it */
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [cooldowns, setCooldowns] = useState<{ [key: string]: number }>({});
 
-    const useSkill = (skillName:string,info:champion,animation:AnimationStep[]) => {
-        // Set the animation
+    const useSkill = (key: string, info: champion, animation: AnimationStep[], durationMs: number) => {
+        const skill = info.skills[key];
+        if (!skill) return;
+        setIsProcessing(true);
         setAnimations(animation);
-        console.log(info.skills[skillName])
+        // Start of turn processing (e.g., animation starts here)
+        // Add any visual feedback or sound here
 
-        // Apply damage
-         if (info.skills[skillName].damage && enemy) {
-            const damageDealt = info.skills[skillName].damage / (enemy.armor || 1);
-            const newEnemyHealth = Math.max(enemy.currentHealth - damageDealt, 0);
-            setEnemy(prev => ({ ...prev, currentHealth: newEnemyHealth }));
-        }
+        setTimeout(() => {
+            // Apply skill effects
+            if (skill.type === "attack") {
+                if (skill.damage) {
+                    // Apply damage to enemy or whatever target logic you have
+                    // e.g., setEnemyHealth(prev => Math.max(0, prev - skill.damage));
+                }
+                if (skill.heal) {
+                    // e.g., setChampion(prev => ({ ...prev, currentHealth: ... }));
+                }
+                if (skill.debuff) {
+                    // Apply debuff effect
+                }
+            }
 
-        // Heal self
-        if (info.skills[skillName].heal) {
-            const newHealth = Math.min(champion.currentHealth + info.skills[skillName].heal, champion.maxHealth);
-            setChampion(prev => ({ ...prev, currentHealth: newHealth }));
-        }
+            if (skill.type === "defense") {
+                if (skill.armorBoost) {
+                    // Apply armor boost
+                }
+                if (skill.tenacity) {
+                    // Apply tenacity boost
+                }
+            }
 
-        // Armor self
-        if (info.skills[skillName].armorBoost){
-            const newArmor = Math.min(champion.armor + info.skills[skillName].armorBoost)
-            setChampion(prev => ({ ...prev, armor: newArmor }));
-        }
+            if (skill.type === "debuff") {
+                if (skill.armorCrack) {
+                    // Apply armor crack to enemy
+                }
+                if (skill.tenacityCrack) {
+                    // Apply tenacity crack
+                }
+            }
 
+            // End turn
+            setTurn((prev) => ({
+                number: prev.number + 1,
+                playerTurn: !prev.playerTurn,
+            }));
+            setCooldowns(prev =>
+                Object.fromEntries(
+                    Object.entries(prev).map(([key, val]) => [key, Math.max(0, val - 1)])
+                )
+            );
 
-        // TODO: Buffs, debuffs, etc.
+            setIsProcessing(false);
+        }, durationMs);
     };
 
+    // Decrease cooldown every second
+    //may come of use later
+    /* useEffect(() => {
+        const interval = setInterval(() => {
+            setCooldowns(prev =>
+                Object.fromEntries(
+                    Object.entries(prev).map(([key, val]) => [key, Math.max(0, val - 1)])
+                )
+            );
+        }, 1000);
+        return () => clearInterval(interval);
+    }, []); */
+
+    
+
+    const handleSkill = (key: string) => {
+        const skill = champion.skills[key];
+        if (cooldowns[key] > 0 || isProcessing) return;
+        useSkill(key, champion, championModelData.animations[key], skill.time);
+        setCooldowns(prev => ({ ...prev, [key]: skill.cooldown }));
+    };
+
+    const healthRatio = champion.currentHealth / champion.maxHealth;
+
     return (
-        <div className="">
-            {/* Hp Bar */}
-            <div className={` border flex flex-col`}>
+        <div className="w-full p-2 space-y-2">
+            {/* Health Bar */}
+            <div className="text-sm font-bold">
                 <div>{champion.name}</div>
-                <div className={`${getHealthColor(healthChampion)}`}>
-                    {champion.maxHealth}/{champion.currentHealth}
+                <div className="w-full bg-gray-800 h-6 rounded overflow-hidden relative">
+                    <div
+                        className="h-full transition-all duration-500"
+                        style={{
+                            width: `${healthRatio * 100}%`,
+                            backgroundColor:
+                                healthRatio <= 0.24 ? 'rgb(239 68 68)' :
+                                    healthRatio <= 0.49 ? 'rgb(234 179 8)' :
+                                        'rgb(34 197 94)',
+                        }}
+                    />
+                    <div className="absolute inset-0 text-center text-white text-sm leading-6">
+                        {champion.currentHealth} / {champion.maxHealth}
+                    </div>
                 </div>
-                <div>
-                    Armor:{champion.armor}
-                </div>
-            </div>
-            {/* Skills */}
-            {/* isPlayer && */}
-            <div className="flex">
-                <div onClick={() => useSkill("Attack",champion,championModelData.animations.attack)}
-                    className="border bg-red-600 p-2 cursor-pointer">
-                    Attack
-                </div>
-                <div onClick={() => useSkill("Q",champion,championModelData.animations.Q)}
-                    className="border bg-red-600 p-2 cursor-pointer">
-                    Q
-                </div>
-                <div onClick={() => useSkill("W",champion,championModelData.animations.W)}
-                    className="border bg-red-600 p-2 cursor-pointer">
-                    W
-                </div>
-                <div onClick={() => useSkill("E",champion,championModelData.animations.E)}
-                    className="border bg-red-600 p-2 cursor-pointer">
-                    E
-                </div>
-                <div onClick={() => useSkill("R",champion,championModelData.animations.R)}
-                    className="border bg-red-600 p-2 cursor-pointer">
-                    R
-                </div>
+                <div className="text-xs">Armor: {champion.armor}</div>
             </div>
 
+            {/* Skill Bar */}
+            <div className="flex gap-2">
+                {["Attack", "Q", "W", "E", "R"].map((key) => {
+                    const skill = champion.skills[key];
+                    const cooldown = cooldowns[key] || 0;
+                    const isDisabled = cooldown > 0 || isProcessing;
 
+                    return (
+                        <div key={key} className="relative group">
+
+                            <div
+                                onClick={() => handleSkill(key)}
+                                className={`w-12 h-12 flex items-center justify-center bg-blue-500 text-white font-bold rounded cursor-pointer select-none border border-white 
+                ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                            >
+                                {/* Placeholder image block */}
+                                <span>{key}</span>
+
+                                {/* Cooldown overlay */}
+                                {cooldown > 0 && (
+                                    <div className="absolute bottom-0 left-0 h-full w-full bg-black bg-opacity-60 flex items-center justify-center text-xs font-bold text-white">
+                                        {cooldown}
+                                    </div>
+                                )}
+                            </div>
+                            {/* Tooltip on hover */}
+                            <div className="absolute bottom-full mb-1 w-24 bg-black text-white text-xs p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                                CD: {skill.cooldown-1}s
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
         </div>
-    )
+    );
 }

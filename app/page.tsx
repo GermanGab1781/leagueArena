@@ -8,6 +8,8 @@ useGLTF.preload('/models/Garen/Garen.glb');
 useGLTF.preload('/models/Darius/Darius.glb');
 
 export default function Home() {
+
+  /* Always put one more second for cooldown */
   const garen: champion = {
     name: "Garen",
     maxHealth: 100,
@@ -16,10 +18,11 @@ export default function Home() {
     tenacity: 0,
     stunned: false,
     skills: {
-      Q: { type: "attack", damage: 30 },
-      W: { type: "defense", armorBoost: 20 },
-      E: { type: "attack", damage: 25 },
-      R: { type: "attack", damage: 50 }
+      Attack:{type:"attack",damage:10,cooldown:3},
+      Q: { type: "attack", damage: 30,cooldown:2 },
+      W: { type: "defense", armorBoost: 20,cooldown:4 },
+      E: { type: "attack", damage: 25,cooldown:3 },
+      R: { type: "attack", damage: 50,cooldown:6 }
     },
   }
   const darius: champion = {
@@ -30,10 +33,11 @@ export default function Home() {
     tenacity: 0,
     stunned: false,
     skills: {
-      Q: { type: "attack", damage: 15, heal: 5 },
-      W: { type: "attack", tenacityCrack: 20 },
-      E: { type: "attack", damage: 25 },
-      R: { type: "attack", damage: 50 }
+      Attack:{type:"attack",damage:10,cooldown:3},
+      Q: { type: "attack", damage: 15, heal: 5, cooldown:3 },
+      W: { type: "attack", tenacityCrack: 20, cooldown:3 },
+      E: { type: "attack", damage: 25, cooldown:4 },
+      R: { type: "attack", damage: 50, cooldown:4 }
     },
   }
 

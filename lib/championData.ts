@@ -19,7 +19,7 @@ export const championsData: Record<string, ChampionModelData> = {
     modelPath: '/models/Garen/Garen.glb',
     animations: {
       idle: steps(['garen_2013_idle1.anm']),
-      attack: steps(['garen_2013_attack_02.anm']),
+      Attack: steps(['garen_2013_attack_02.anm']),
       Q: steps(
         [
           'garen_2013_run_spell1.anm',
@@ -58,7 +58,7 @@ export const championsData: Record<string, ChampionModelData> = {
     modelPath: '/models/Darius/Darius.glb',
     animations: {
       idle: steps(['darius_idle1.anm']),
-      attack: steps(['darius_attack1.anm']),
+      Attack: steps(['darius_attack1.anm']),
       Q: steps(
         [
           'darius_spell1_in.anm',

@@ -13,6 +13,7 @@ export default function MainUi({turn,setTurn,player,playerModelData,setPlayer,se
                     championModelData={playerModelData}
                     setAnimations={setPlayerModelAnim}
                     isPlayer={true}
+                    turn={turn}
                     setTurn={setTurn}
                 />
             </div>
@@ -25,6 +26,7 @@ export default function MainUi({turn,setTurn,player,playerModelData,setPlayer,se
                     championModelData={enemyModelData}
                     setAnimations={setEnemyModelAnim}
                     isPlayer={false}
+                    turn={turn}
                     setTurn={setTurn}
                 />
             </div>

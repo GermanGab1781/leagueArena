@@ -10,6 +10,8 @@ type champion = {
     name: string;
     maxHealth: number;
     currentHealth: number;
+    maxMana?:number;
+    currentMana?:number;
     armor: number;
     tenacity: number;
     skills: skills;
@@ -19,6 +21,7 @@ type champion = {
 type Skill = {
     type: "attack" | "defense" | "debuff";
     time: number;
+    cooldown:number;
 
     // Attack-related
     damage?: number;
@@ -35,6 +38,7 @@ type Skill = {
 };
 
 type Skills = {
+    Attack:Skill;
     Q: Skill;
     W: Skill;
     E: Skill;
@@ -58,6 +62,7 @@ type ChampionUiProps = {
     championModelData: ChampionData,
     setAnimations: React.Dispatch<React.SetStateAction<AnimationStep[]>>
     setTurn:React.Dispatch<React.SetStateAction<turn>>
+    turn:turn;
 }
 type MainUiProps = {
     turn: turn;
@@ -88,7 +93,7 @@ type AnimationStep = {
 
 type ChampionAnimations = {
     idle: AnimationStep[];
-    attack: AnimationStep[];
+    Attack: AnimationStep[];
     death?: AnimationStep[];
     Q: AnimationStep[];
     W: AnimationStep[];
