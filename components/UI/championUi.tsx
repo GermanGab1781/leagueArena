@@ -80,13 +80,23 @@ export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isP
         return () => clearInterval(interval);
     }, []); */
 
-    
+
 
     const handleSkill = (key: string) => {
-        const skill = champion.skills[key];
-        if (cooldowns[key] > 0 || isProcessing) return;
-        useSkill(key, champion, championModelData.animations[key], skill.time);
-        setCooldowns(prev => ({ ...prev, [key]: skill.cooldown }));
+        if (isPlayer && turn.playerTurn === true) {
+            const skill = champion.skills[key];
+            if (cooldowns[key] > 0 || isProcessing) return;
+            useSkill(key, champion, championModelData.animations[key], skill.time);
+            setCooldowns(prev => ({ ...prev, [key]: skill.cooldown }));
+        }
+        if (!isPlayer && turn.playerTurn === false) {
+            const skill = champion.skills[key];
+            if (cooldowns[key] > 0 || isProcessing) return;
+            useSkill(key, champion, championModelData.animations[key], skill.time);
+            setCooldowns(prev => ({ ...prev, [key]: skill.cooldown }));
+        }
+
+        
     };
 
     const healthRatio = champion.currentHealth / champion.maxHealth;
@@ -115,11 +125,11 @@ export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isP
             </div>
 
             {/* Skill Bar */}
-            <div className="flex gap-2">
+            <div className="flex gap-2 select-none">
                 {["Attack", "Q", "W", "E", "R"].map((key) => {
                     const skill = champion.skills[key];
                     const cooldown = cooldowns[key] || 0;
-                    const isDisabled = cooldown > 0 || isProcessing;
+                    const isDisabled = cooldown > 0 || isProcessing || turn.playerTurn === false;
 
                     return (
                         <div key={key} className="relative group">
@@ -141,7 +151,7 @@ export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isP
                             </div>
                             {/* Tooltip on hover */}
                             <div className="absolute bottom-full mb-1 w-24 bg-black text-white text-xs p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                                CD: {skill.cooldown-1}s
+                                CD: {skill.cooldown - 1}s
                             </div>
                         </div>
                     );

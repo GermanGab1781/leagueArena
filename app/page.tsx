@@ -18,11 +18,11 @@ export default function Home() {
     tenacity: 0,
     stunned: false,
     skills: {
-      Attack:{type:"attack",damage:10,cooldown:3},
-      Q: { type: "attack", damage: 30,cooldown:2 },
-      W: { type: "defense", armorBoost: 20,cooldown:4 },
-      E: { type: "attack", damage: 25,cooldown:3 },
-      R: { type: "attack", damage: 50,cooldown:6 }
+      Attack: { type: "attack", damage: 10, time: 2000, cooldown: 3 },
+      Q: { type: "attack", damage: 30, time: 5000, cooldown: 2 },
+      W: { type: "defense", armorBoost: 20, time: 2000, cooldown: 4 },
+      E: { type: "attack", damage: 25, time: 2000, cooldown: 3 },
+      R: { type: "attack", damage: 50, time: 2000, cooldown: 6 }
     },
   }
   const darius: champion = {
@@ -33,11 +33,11 @@ export default function Home() {
     tenacity: 0,
     stunned: false,
     skills: {
-      Attack:{type:"attack",damage:10,cooldown:3},
-      Q: { type: "attack", damage: 15, heal: 5, cooldown:3 },
-      W: { type: "attack", tenacityCrack: 20, cooldown:3 },
-      E: { type: "attack", damage: 25, cooldown:4 },
-      R: { type: "attack", damage: 50, cooldown:4 }
+      Attack: { type: "attack", damage: 10, time: 2000, cooldown: 3 },
+      Q: { type: "attack", damage: 15, heal: 5, time: 2000, cooldown: 3 },
+      W: { type: "attack", tenacityCrack: 20, time: 2000, cooldown: 3 },
+      E: { type: "attack", damage: 25, time: 2000, cooldown: 4 },
+      R: { type: "attack", damage: 50, time: 2000, cooldown: 4 }
     },
   }
 
