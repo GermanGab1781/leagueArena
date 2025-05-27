@@ -22,6 +22,12 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
   const { actions, mixer } = useAnimations(animations, ref);
   const idleName = data.animations.idle[0];
 
+  function getRandomString(strings: string[]): string | undefined {
+    if (strings.length === 0) return undefined;
+    const randomIndex = Math.floor(Math.random() * strings.length);
+    return strings[randomIndex];
+  }
+
   useEffect(() => {
     setCurrentAnimation(animationsActive);
     setAnimationIndex(0);
@@ -46,6 +52,18 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
 
     const animStep = currentAnimation[animationIndex];
     const currentAction = actions[animStep.name];
+    const skillName = animStep.skillName;
+    const sfxForStep = data.animations[skillName][animationIndex].sfx?.audios;
+    console.log(sfxForStep)
+    
+    if (sfxForStep?.length) {
+      const randomAudio = getRandomString(sfxForStep);
+      if (randomAudio) {
+        const audio = new Audio(randomAudio);
+        audio.play().catch(err => console.error('Audio playback error:', err));
+      }
+    }
+
     const idleAction = actions[idleName.name];
     const clip = animations.find((a: { name: string; }) => a.name === animStep.name);
 
@@ -63,6 +81,7 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
       currentAction.clampWhenFinished = false;
     } else {
       currentAction.setLoop(THREE.LoopOnce, 1);
+      /*  */
       currentAction.clampWhenFinished = true;
     }
 

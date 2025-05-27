@@ -87,8 +87,10 @@ type ChampionModelProps = {
 /* Animation types */
 type AnimationStep = {
     name: string;
+    skillName:string;
     moveTo?: { x?: number; y?: number; z?: number; duration: number };
     rotateTo?: { x?: number; y?: number; z?: number; duration: number };
+    sfx?:{audios?:string[]};
 };
 
 type ChampionAnimations = {
@@ -100,6 +102,7 @@ type ChampionAnimations = {
     E: AnimationStep[];
     R: AnimationStep[];
 };
+
 
 type ChampionModelData = {
     name: string;
