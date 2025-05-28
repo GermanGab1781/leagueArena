@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-
+import Image from "next/image";
 export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isPlayer, championModelData, setAnimations, setTurn, turn }: ChampionUiProps) {
     /* make a single skill function that takes the type then it process it */
     const [isProcessing, setIsProcessing] = useState(false);
@@ -226,21 +226,27 @@ export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isP
                     const skill = champion.skills[key];
                     const cooldown = cooldowns[key] || 0;
                     const isDisabled = cooldown > 0 || isProcessing || turn.playerTurn === false;
-
+                    console.log(`/models/${champion.name}/icons/${key}.webp`)
                     return (
                         <div key={key} className="relative group">
 
                             <div
                                 onClick={() => handleSkill(key)}
-                                className={`w-12 h-12 flex items-center justify-center bg-blue-500 text-white font-bold rounded cursor-pointer select-none border border-white 
+                                className={`w-12 h-12 flex items-center justify-center  text-white font-bold rounded cursor-pointer select-none border border-white 
                 ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
                             >
                                 {/* Placeholder image block */}
-                                <span>{key}</span>
+
+                                <span>
+                                    {key === "Attack"
+                                        ? (<Image src={`/Basic_Attack.webp`} alt={`Skill ${key}`} width={1000} height={1000} />)
+                                        : (<Image src={`/models/${champion.name}/icons/${key}.webp`} alt={`Skill ${key}`} width={1000} height={1000} />)
+                                    }
+                                </span>
 
                                 {/* Cooldown overlay */}
                                 {cooldown > 0 && (
-                                    <div className="absolute bottom-0 left-0 h-full w-full bg-black bg-opacity-60 flex items-center justify-center text-xs font-bold text-white">
+                                    <div className="absolute bottom-0 left-0 h-full w-full border bg-black bg-opacity-50 flex items-center justify-center text-xs font-bold text-white">
                                         {cooldown}
                                     </div>
                                 )}

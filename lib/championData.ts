@@ -29,7 +29,7 @@ export const championsData: Record<string, ChampionModelData> = {
         {},
         {},
         {
-          0: { audios: ['/models/Garen/audios/Garen_Attack1.mp3', '/models/Garen/audios/Garen_Attack2.mp3'] }
+          0: { audios: ['/models/Garen/audios/Attack1.mp3', '/models/Garen/audios/Attack2.mp3'] }
         }
       ),
       Q: steps(
@@ -48,8 +48,8 @@ export const championsData: Record<string, ChampionModelData> = {
           2: { y: -80, duration: 0.7 },
         },
         {
-          0: { audios: ['/models/Garen/audios/Garen_Q1.mp3'] },
-          1: { audios: ['/models/Garen/audios/Garen_Attack1.mp3'] }
+          0: { audios: ['/models/Garen/audios/Q1.mp3'] },
+          1: { audios: ['/models/Garen/audios/Attack1.mp3'] }
         }
       ),
       W: steps(
@@ -60,11 +60,11 @@ export const championsData: Record<string, ChampionModelData> = {
         {
           0: {
             audios: [
-              '/models/Garen/audios/Garen_W1.mp3',
-              '/models/Garen/audios/Garen_W2.mp3',
-              '/models/Garen/audios/Garen_W3.mp3',
-              '/models/Garen/audios/Garen_W4.mp3',
-              '/models/Garen/audios/Garen_W5.mp3',
+              '/models/Garen/audios/W1.mp3',
+              '/models/Garen/audios/W2.mp3',
+              '/models/Garen/audios/W3.mp3',
+              '/models/Garen/audios/W4.mp3',
+              '/models/Garen/audios/W5.mp3',
             ],
           },
         }
@@ -80,7 +80,7 @@ export const championsData: Record<string, ChampionModelData> = {
           1: { y: -80, duration: 0.7 },
         },
         {
-          0: { audios: ['/models/Garen/audios/Garen_E1.mp3', '/models/Garen/audios/Garen_E2.mp3'] },
+          0: { audios: ['/models/Garen/audios/E1.mp3', '/models/Garen/audios/E2.mp3'] },
         }
       ),
       R: steps(
@@ -89,7 +89,7 @@ export const championsData: Record<string, ChampionModelData> = {
         {},
         {},
         {
-          0: { audios: ['/models/Garen/audios/Garen_R.mp3'] },
+          0: { audios: ['/models/Garen/audios/R.mp3'] },
         }
       ),
       death: steps(['garen_2013_death1.anm'], 'death'),
@@ -111,6 +111,8 @@ export const championsData: Record<string, ChampionModelData> = {
         },
         {
           2: { y: -240, duration: 0.2 },
+        },{
+          1: { audios: ['/models/Darius/audios/Q1.mp3'] }
         }
       ),
       W: steps(
