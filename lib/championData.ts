@@ -48,7 +48,8 @@ export const championsData: Record<string, ChampionModelData> = {
           2: { y: -80, duration: 0.7 },
         },
         {
-          0: { audios: ['/models/Garen/audios/Garen_Q1.mp3'] }
+          0: { audios: ['/models/Garen/audios/Garen_Q1.mp3'] },
+          1: { audios: ['/models/Garen/audios/Garen_Attack1.mp3'] }
         }
       ),
       W: steps(

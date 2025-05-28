@@ -13,10 +13,21 @@ type champion = {
     maxMana?:number;
     currentMana?:number;
     armor: number;
+    baseArmor:number;
+    debuffs:Debuff[];
     tenacity: number;
+    baseTenacity:number;
     skills: skills;
     stunned: boolean;
 }
+
+
+type Debuff = {
+    type: "armorCrack" | "tenacityCrack" | "stun" | "custom";
+    value: number;
+    duration: number;
+    remaining: number; 
+};
 
 type Skill = {
     type: "attack" | "defense" | "debuff";
@@ -24,7 +35,8 @@ type Skill = {
     cooldown:number;
 
     // Attack-related
-    damage?: number;
+    physicalDamage?: number;
+    trueDamage?: number;
     heal?: number;
     debuff?: number;
 

@@ -1,71 +1,152 @@
 import { useEffect, useState } from "react";
 
 export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isPlayer, championModelData, setAnimations, setTurn, turn }: ChampionUiProps) {
-    function getHealthColor(ratio: number): string {
-        if (ratio <= 0.24) return 'bg-red-500';
-        if (ratio <= 0.49) return 'bg-yellow-500';
-        return 'bg-green-500';
-    }
-    const healthChampion = champion.currentHealth / champion.maxHealth;
     /* make a single skill function that takes the type then it process it */
     const [isProcessing, setIsProcessing] = useState(false);
     const [cooldowns, setCooldowns] = useState<{ [key: string]: number }>({});
+
+    function processDebuffs(champ: champion): champion {
+        let updated = { ...champ };
+
+        // Reset to base stats first
+        updated.armor = updated.baseArmor;
+        updated.tenacity = updated.baseTenacity;
+        updated.stunned = false;
+
+        const activeDebuffs: Debuff[] = [];
+
+        updated.debuffs.forEach((d) => {
+            // Apply effect
+            switch (d.type) {
+                case "armorCrack":
+                    updated.armor = Math.max(0, updated.armor - d.value);
+                    break;
+                case "tenacityCrack":
+                    updated.tenacity = Math.max(0, updated.tenacity - d.value);
+                    break;
+                case "stun":
+                    updated.stunned = true;
+                    break;
+                // Add other debuffs if needed
+            }
+
+            // Only keep if still active
+            if (d.remaining > 1) {
+                activeDebuffs.push({ ...d, remaining: d.remaining - 1 });
+            }
+        });
+
+        updated.debuffs = activeDebuffs;
+        return updated;
+    }
 
     const useSkill = (key: string, info: champion, animation: AnimationStep[], durationMs: number) => {
         const skill = info.skills[key];
         if (!skill) return;
         setIsProcessing(true);
         setAnimations(animation);
-        // Start of turn processing (e.g., animation starts here)
-        // Add any visual feedback or sound here
+
+        const isCurrentPlayerTurn = turn.playerTurn === isPlayer;
+
+        // Helper: apply debuffs and immediately process them
+        const applyDebuffs = (unit: champion, skill: Skill): champion => {
+            const newDebuffs = [...unit.debuffs];
+
+            /* Add one more since it applies on same turn */
+            if (skill.debuff) {
+                newDebuffs.push({ type: "custom", value: skill.debuff, duration: 5, remaining: 5 });
+            }
+
+            if (skill.armorCrack) {
+                newDebuffs.push({ type: "armorCrack", value: skill.armorCrack, duration: 5, remaining: 5 });
+            }
+
+            if (skill.tenacityCrack) {
+                newDebuffs.push({ type: "tenacityCrack", value: skill.tenacityCrack, duration: 5, remaining: 5 });
+            }
+
+            return processDebuffs({ ...unit, debuffs: newDebuffs });
+        };
+
+        // Process debuffs at the start of the turn
+        const processTurnStart = (unitSetter: React.Dispatch<React.SetStateAction<champion>>) => {
+            unitSetter(prev => {
+                const updated = processDebuffs(prev);
+                if (updated.stunned) {
+                    setIsProcessing(false);
+                    setTurn(t => ({ number: t.number + 1, playerTurn: !t.playerTurn }));
+                }
+                return updated;
+            });
+        };
+
+        if (isCurrentPlayerTurn) {
+            isPlayer ? processTurnStart(setChampion) : processTurnStart(setEnemy);
+        }
 
         setTimeout(() => {
-            // Apply skill effects
             if (skill.type === "attack") {
-                if (skill.damage) {
-                    // Apply damage to enemy or whatever target logic you have
-                    // e.g., setEnemyHealth(prev => Math.max(0, prev - skill.damage));
-                }
+                // Damage enemy
+                setEnemy(prev => {
+                    let newHealth = prev.currentHealth;
+
+                    if (skill.physicalDamage) {
+                        const reduced = Math.max(skill.physicalDamage - prev.armor, 0);
+                        newHealth -= reduced;
+                    }
+
+                    if (skill.trueDamage) {
+                        newHealth -= skill.trueDamage;
+                    }
+
+                    // Apply debuffs and process them immediately
+                    return applyDebuffs({
+                        ...prev,
+                        currentHealth: Math.max(newHealth, 0),
+                    }, skill);
+                });
+
+                // Heal self
                 if (skill.heal) {
-                    // e.g., setChampion(prev => ({ ...prev, currentHealth: ... }));
-                }
-                if (skill.debuff) {
-                    // Apply debuff effect
+                    setChampion(prev => ({
+                        ...prev,
+                        currentHealth: Math.min(prev.currentHealth + skill.heal!, prev.maxHealth),
+                    }));
                 }
             }
 
             if (skill.type === "defense") {
-                if (skill.armorBoost) {
-                    // Apply armor boost
-                }
-                if (skill.tenacity) {
-                    // Apply tenacity boost
+                if (skill.armorBoost || skill.tenacity) {
+                    setChampion(prev => ({
+                        ...prev,
+                        armor: prev.armor + (skill.armorBoost || 0),
+                        tenacity: prev.tenacity + (skill.tenacity || 0),
+                    }));
                 }
             }
 
-            if (skill.type === "debuff") {
-                if (skill.armorCrack) {
-                    // Apply armor crack to enemy
-                }
-                if (skill.tenacityCrack) {
-                    // Apply tenacity crack
-                }
+            // Apply debuffs that weren't part of attack damage (e.g., armorCrack only skills)
+            if (skill.type !== "attack") {
+                setEnemy(prev => applyDebuffs(prev, skill));
             }
 
             // End turn
-            setTurn((prev) => ({
+            setTurn(prev => ({
                 number: prev.number + 1,
                 playerTurn: !prev.playerTurn,
             }));
+
+            // Reduce cooldowns
             setCooldowns(prev =>
                 Object.fromEntries(
-                    Object.entries(prev).map(([key, val]) => [key, Math.max(0, val - 1)])
+                    Object.entries(prev).map(([k, v]) => [k, Math.max(0, v - 1)])
                 )
             );
 
             setIsProcessing(false);
         }, durationMs);
     };
+
 
     // Decrease cooldown every second
     //may come of use later
@@ -96,13 +177,24 @@ export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isP
             setCooldowns(prev => ({ ...prev, [key]: skill.cooldown }));
         }
 
-        
+
     };
 
     const healthRatio = champion.currentHealth / champion.maxHealth;
 
     return (
         <div className="w-full p-2 space-y-2">
+            <div>
+                Debuffs
+                {champion.debuffs.length > 0 && (
+                    <ul className="text-sm list-disc list-inside">
+                        {champion.debuffs.map((debuff, index) => (
+                            <li key={index}>
+                                {debuff.type} (-{debuff.value || 0}) — {debuff.remaining} turn{debuff.remaining !== 1 && "s"} left
+                            </li>
+                        ))}
+                    </ul>)}
+            </div>
             {/* Health Bar */}
             <div className="text-sm font-bold">
                 <div>{champion.name}</div>
@@ -121,7 +213,11 @@ export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isP
                         {champion.currentHealth} / {champion.maxHealth}
                     </div>
                 </div>
-                <div className="text-xs">Armor: {champion.armor}</div>
+                <div className="flex gap-x-3">
+
+                    <div className="text-xs">Armor: {champion.armor}</div>
+                    <div className="text-xs">Tenacity: {champion.tenacity}</div>
+                </div>
             </div>
 
             {/* Skill Bar */}

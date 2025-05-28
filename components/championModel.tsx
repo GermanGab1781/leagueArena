@@ -54,7 +54,7 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
     const currentAction = actions[animStep.name];
     const skillName = animStep.skillName;
     const sfxForStep = data.animations[skillName][animationIndex].sfx?.audios;
-    console.log(sfxForStep)
+    /* console.log(sfxForStep) */
     
     if (sfxForStep?.length) {
       const randomAudio = getRandomString(sfxForStep);

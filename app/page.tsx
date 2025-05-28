@@ -14,15 +14,18 @@ export default function Home() {
     name: "Garen",
     maxHealth: 100,
     currentHealth: 100,
-    armor: 15,
-    tenacity: 0,
+    armor: 10,
+    baseArmor:10,
+    baseTenacity:25,
+    tenacity: 25,
+    debuffs: [],
     stunned: false,
     skills: {
-      Attack: { type: "attack", damage: 10, time: 2000, cooldown: 3 },
-      Q: { type: "attack", damage: 30, time: 5000, cooldown: 2 },
-      W: { type: "defense", armorBoost: 20, time: 2000, cooldown: 4 },
-      E: { type: "attack", damage: 25, time: 2000, cooldown: 3 },
-      R: { type: "attack", damage: 50, time: 2000, cooldown: 6 }
+      Attack: { type: "attack", physicalDamage: 10, time: 700, cooldown: 3 },
+      Q: { type: "attack", physicalDamage: 30, time: 5000, cooldown: 2 },
+      W: { type: "defense", armorBoost: 5, time: 2000, cooldown: 4 },
+      E: { type: "attack", physicalDamage: 25,armorCrack:1, time: 200, cooldown: 0 },
+      R: { type: "attack", trueDamage: 50, time: 2000, cooldown: 6 }
     },
   }
   const darius: champion = {
@@ -30,14 +33,17 @@ export default function Home() {
     maxHealth: 100,
     currentHealth: 100,
     armor: 5,
-    tenacity: 0,
+    baseArmor:5,
+    baseTenacity:25,
+    tenacity: 25,
+    debuffs: [],
     stunned: false,
     skills: {
-      Attack: { type: "attack", damage: 10, time: 2000, cooldown: 3 },
-      Q: { type: "attack", damage: 15, heal: 5, time: 2000, cooldown: 3 },
-      W: { type: "attack", tenacityCrack: 20, time: 2000, cooldown: 3 },
-      E: { type: "attack", damage: 25, time: 2000, cooldown: 4 },
-      R: { type: "attack", damage: 50, time: 2000, cooldown: 4 }
+      Attack: { type: "attack", physicalDamage: 10, time: 2000, cooldown: 3 },
+      Q: { type: "attack", physicalDamage: 15, heal: 5, time: 2000, cooldown: 3 },
+      W: { type: "attack", physicalDamage: 25, time: 2000, cooldown: 4 },
+      E: { type: "attack", physicalDamage: 10, tenacityCrack: 1, time: 200, cooldown: 0 },
+      R: { type: "attack", physicalDamage: 50, time: 2000, cooldown: 4 }
     },
   }
 
