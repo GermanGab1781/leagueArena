@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { applyDebuffs, processDebuffs } from "@/lib/utils/combat";
+import { applyDebuffs, processBuffs, processDebuffs, applyBuffs, resetStats } from "@/lib/utils/combat";
 export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isPlayer, championModelData, setAnimations, setTurn, turn }: ChampionUiProps) {
     /* make a single skill function that takes the type then it process it */
     const [isProcessing, setIsProcessing] = useState(false);
@@ -9,18 +9,23 @@ export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isP
     useEffect(() => {
         const isCurrentPlayerTurn = turn.playerTurn === isPlayer;
         const processTurnStart = (unitSetter: React.Dispatch<React.SetStateAction<champion>>) => {
-                unitSetter(prev => {
-                    const updated = processDebuffs(prev);
-                    if (updated.stunned) {
-                        setIsProcessing(false);
-                        setTurn(t => ({ number: t.number + 1, playerTurn: !t.playerTurn }));
-                    }
-                    return updated;
-                });
-            };
+            unitSetter(prev => {
+                let updated = resetStats(prev);         // Always reset to base first
+                updated = processDebuffs(updated);      // Apply debuffs
+                updated = processBuffs(updated);        // Apply buffs
+
+                if (updated.stunned) {
+                    setIsProcessing(false);
+                    setTurn(t => ({ number: t.number + 1, playerTurn: !t.playerTurn }));
+                }
+
+                return updated;
+            });
+        };
+
         if (isCurrentPlayerTurn) {
             processTurnStart(setChampion)
-        }else{
+        } else {
             processTurnStart(setChampion)
         }
     }, [turn.number])
@@ -72,6 +77,10 @@ export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isP
                 }
             }
 
+            if (skill.type === "buff") {
+                setChampion(prev => applyBuffs(prev, skill))
+            }
+
             // Apply debuffs that weren't part of attack damage (e.g., armorCrack only skills)
             if (skill.type !== "attack") {
                 setEnemy(prev => applyDebuffs(prev, skill));
@@ -94,22 +103,6 @@ export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isP
         }, durationMs);
     };
 
-
-    // Decrease cooldown every second
-    //may come of use later
-    /* useEffect(() => {
-        const interval = setInterval(() => {
-            setCooldowns(prev =>
-                Object.fromEntries(
-                    Object.entries(prev).map(([key, val]) => [key, Math.max(0, val - 1)])
-                )
-            );
-        }, 1000);
-        return () => clearInterval(interval);
-    }, []); */
-
-
-
     const handleSkill = (key: string) => {
         if (isPlayer && turn.playerTurn === true) {
             const skill = champion.skills[key];
@@ -130,7 +123,7 @@ export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isP
     return (
         <div className="w-full p-2 space-y-2">
             <div>
-                {/* {debuff.type} (-{debuff.value || 0}) — {debuff.remaining} turn{debuff.remaining !== 1 && "s"} left */}
+
                 Debuffs
                 {champion.debuffs.length > 0 && (
                     <div className="text-sm flex gap-1 list-disc list-inside">
@@ -138,6 +131,18 @@ export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isP
                             <div className="relative w-10 h-10 border-2 rounded-md border-red-500/45 " key={index}>
                                 <Image src={`/icons/Debuff_${debuff.type}.webp`} alt={`Debuff of type ${debuff}`} width={100} height={100} />
                                 <span className="absolute right-0 top-0 text-red-500 font-bold">{debuff.remaining}</span>
+                            </div>
+                        ))}
+                    </div>)}
+            </div>
+            <div>
+                Buffs
+                {champion.buffs.length > 0 && (
+                    <div className="text-sm flex gap-1 list-disc list-inside">
+                        {champion.buffs.map((buff, index) => (
+                            <div className="relative w-10 h-10 border-2 rounded-md border-green-400 " key={index}>
+                                <Image src={`/icons/Buff_${buff.type}.webp`} alt={`Debuff of type ${buff}`} width={100} height={100} />
+                                <span className="absolute right-0 top-0 text-green-200 font-bold">{buff.remaining}</span>
                             </div>
                         ))}
                     </div>)}

@@ -18,12 +18,13 @@ export default function Home() {
     baseArmor:10,
     baseTenacity:25,
     tenacity: 25,
+    buffs:[],
     debuffs: [],
     stunned: false,
     skills: {
       Attack: { type: "attack", physicalDamage: 10, time: 700, cooldown: 3 },
       Q: { type: "attack", physicalDamage: 30, time: 5000, cooldown: 2 },
-      W: { type: "defense", armorBoost: 5, time: 2000, cooldown: 4 },
+      W: { type: "buff", armorBoost: 5, time: 2000, cooldown: 4 },
       E: { type: "attack", physicalDamage: 25,armorCrack:1, time: 200, cooldown: 0 },
       R: { type: "attack", trueDamage: 50, time: 2000, cooldown: 6 }
     },
@@ -36,13 +37,14 @@ export default function Home() {
     baseArmor:5,
     baseTenacity:25,
     tenacity: 25,
+    buffs:[],
     debuffs: [],
     stunned: false,
     skills: {
       Attack: { type: "attack", physicalDamage: 10, time: 2000, cooldown: 0 },
       Q: { type: "attack", physicalDamage: 15, heal: 5, time: 2000, cooldown: 3 },
       W: { type: "attack", physicalDamage: 25, time: 2000, cooldown: 4 },
-      E: { type: "attack", physicalDamage: 10, armorCrack:9,tenacityCrack: 1, time: 200, cooldown: 1 },
+      E: { type: "attack", physicalDamage: 10, armorCrack:10,tenacityCrack: 1, time: 200, cooldown: 1 },
       R: { type: "attack", physicalDamage: 50, time: 2000, cooldown: 4 }
     },
   }

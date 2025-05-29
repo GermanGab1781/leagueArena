@@ -15,6 +15,7 @@ type champion = {
     armor: number;
     baseArmor:number;
     debuffs:Debuff[];
+    buffs:Buff[];
     tenacity: number;
     baseTenacity:number;
     skills: skills;
@@ -28,9 +29,15 @@ type Debuff = {
     duration: number;
     remaining: number; 
 };
+type Buff = {
+    type: "armorBoost" | "tenacityBoost" | "stun" | "custom";
+    value: number;
+    duration: number;
+    remaining: number; 
+};
 
 type Skill = {
-    type: "attack" | "defense" | "debuff";
+    type: "attack" | "defense" | "debuff" | "buff";
     time: number;
     cooldown:number;
 
@@ -42,7 +49,7 @@ type Skill = {
 
     // Defense-related
     armorBoost?: number;
-    tenacity?: number;
+    tenacityBoost?: number;
 
     // Debuff-related
     armorCrack?: number;
