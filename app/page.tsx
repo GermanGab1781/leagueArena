@@ -39,10 +39,10 @@ export default function Home() {
     debuffs: [],
     stunned: false,
     skills: {
-      Attack: { type: "attack", physicalDamage: 10, time: 2000, cooldown: 3 },
+      Attack: { type: "attack", physicalDamage: 10, time: 2000, cooldown: 0 },
       Q: { type: "attack", physicalDamage: 15, heal: 5, time: 2000, cooldown: 3 },
       W: { type: "attack", physicalDamage: 25, time: 2000, cooldown: 4 },
-      E: { type: "attack", physicalDamage: 10, tenacityCrack: 1, time: 200, cooldown: 0 },
+      E: { type: "attack", physicalDamage: 10, armorCrack:9,tenacityCrack: 1, time: 200, cooldown: 1 },
       R: { type: "attack", physicalDamage: 50, time: 2000, cooldown: 4 }
     },
   }

@@ -1,89 +1,36 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { applyDebuffs, processDebuffs } from "@/lib/utils/combat";
 export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isPlayer, championModelData, setAnimations, setTurn, turn }: ChampionUiProps) {
     /* make a single skill function that takes the type then it process it */
     const [isProcessing, setIsProcessing] = useState(false);
     const [cooldowns, setCooldowns] = useState<{ [key: string]: number }>({});
 
-    function processDebuffs(champ: champion): champion {
-        let updated = { ...champ };
+    useEffect(() => {
+        const isCurrentPlayerTurn = turn.playerTurn === isPlayer;
+        const processTurnStart = (unitSetter: React.Dispatch<React.SetStateAction<champion>>) => {
+                unitSetter(prev => {
+                    const updated = processDebuffs(prev);
+                    if (updated.stunned) {
+                        setIsProcessing(false);
+                        setTurn(t => ({ number: t.number + 1, playerTurn: !t.playerTurn }));
+                    }
+                    return updated;
+                });
+            };
+        if (isCurrentPlayerTurn) {
+            processTurnStart(setChampion)
+        }else{
+            processTurnStart(setChampion)
+        }
+    }, [turn.number])
 
-        // Reset to base stats first
-        updated.armor = updated.baseArmor;
-        updated.tenacity = updated.baseTenacity;
-        updated.stunned = false;
-
-        const activeDebuffs: Debuff[] = [];
-
-        updated.debuffs.forEach((d) => {
-            // Apply effect
-            switch (d.type) {
-                case "armorCrack":
-                    updated.armor = Math.max(0, updated.armor - d.value);
-                    break;
-                case "tenacityCrack":
-                    updated.tenacity = Math.max(0, updated.tenacity - d.value);
-                    break;
-                case "stun":
-                    updated.stunned = true;
-                    break;
-                // Add other debuffs if needed
-            }
-
-            // Only keep if still active
-            if (d.remaining > 1) {
-                activeDebuffs.push({ ...d, remaining: d.remaining - 1 });
-            }
-        });
-
-        updated.debuffs = activeDebuffs;
-        return updated;
-    }
 
     const useSkill = (key: string, info: champion, animation: AnimationStep[], durationMs: number) => {
         const skill = info.skills[key];
         if (!skill) return;
         setIsProcessing(true);
         setAnimations(animation);
-
-        const isCurrentPlayerTurn = turn.playerTurn === isPlayer;
-
-        // Helper: apply debuffs and immediately process them
-        const applyDebuffs = (unit: champion, skill: Skill): champion => {
-            const newDebuffs = [...unit.debuffs];
-
-            /* Add one more since it applies on same turn */
-            if (skill.debuff) {
-                newDebuffs.push({ type: "custom", value: skill.debuff, duration: 5, remaining: 5 });
-            }
-
-            if (skill.armorCrack) {
-                newDebuffs.push({ type: "armorCrack", value: skill.armorCrack, duration: 5, remaining: 5 });
-            }
-
-            if (skill.tenacityCrack) {
-                newDebuffs.push({ type: "tenacityCrack", value: skill.tenacityCrack, duration: 5, remaining: 5 });
-            }
-
-            return processDebuffs({ ...unit, debuffs: newDebuffs });
-        };
-
-        // Process debuffs at the start of the turn
-        const processTurnStart = (unitSetter: React.Dispatch<React.SetStateAction<champion>>) => {
-            unitSetter(prev => {
-                const updated = processDebuffs(prev);
-                if (updated.stunned) {
-                    setIsProcessing(false);
-                    setTurn(t => ({ number: t.number + 1, playerTurn: !t.playerTurn }));
-                }
-                return updated;
-            });
-        };
-
-        if (isCurrentPlayerTurn) {
-            isPlayer ? processTurnStart(setChampion) : processTurnStart(setEnemy);
-        }
-
         setTimeout(() => {
             if (skill.type === "attack") {
                 // Damage enemy
@@ -176,8 +123,6 @@ export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isP
             useSkill(key, champion, championModelData.animations[key], skill.time);
             setCooldowns(prev => ({ ...prev, [key]: skill.cooldown }));
         }
-
-
     };
 
     const healthRatio = champion.currentHealth / champion.maxHealth;
@@ -185,15 +130,17 @@ export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isP
     return (
         <div className="w-full p-2 space-y-2">
             <div>
+                {/* {debuff.type} (-{debuff.value || 0}) — {debuff.remaining} turn{debuff.remaining !== 1 && "s"} left */}
                 Debuffs
                 {champion.debuffs.length > 0 && (
-                    <ul className="text-sm list-disc list-inside">
+                    <div className="text-sm flex gap-1 list-disc list-inside">
                         {champion.debuffs.map((debuff, index) => (
-                            <li key={index}>
-                                {debuff.type} (-{debuff.value || 0}) — {debuff.remaining} turn{debuff.remaining !== 1 && "s"} left
-                            </li>
+                            <div className="relative w-10 h-10 border-2 rounded-md border-red-500/45 " key={index}>
+                                <Image src={`/icons/Debuff_${debuff.type}.webp`} alt={`Debuff of type ${debuff}`} width={100} height={100} />
+                                <span className="absolute right-0 top-0 text-red-500 font-bold">{debuff.remaining}</span>
+                            </div>
                         ))}
-                    </ul>)}
+                    </div>)}
             </div>
             {/* Health Bar */}
             <div className="text-sm font-bold">
@@ -225,15 +172,15 @@ export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isP
                 {["Attack", "Q", "W", "E", "R"].map((key) => {
                     const skill = champion.skills[key];
                     const cooldown = cooldowns[key] || 0;
-                    const isDisabled = cooldown > 0 || isProcessing || turn.playerTurn === false;
-                    console.log(`/models/${champion.name}/icons/${key}.webp`)
+                    const isDisabled = cooldown > 0 || isProcessing || (isPlayer && turn.playerTurn) || (!isPlayer && !turn.playerTurn);
+                    /* console.log(`/models/${champion.name}/icons/${key}.webp`) */
                     return (
                         <div key={key} className="relative group">
 
                             <div
                                 onClick={() => handleSkill(key)}
                                 className={`w-12 h-12 flex items-center justify-center  text-white font-bold rounded cursor-pointer select-none border border-white 
-                ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                ${isDisabled ? " cursor-not-allowed" : "opacity-50"}`}
                             >
                                 {/* Placeholder image block */}
 
@@ -246,14 +193,23 @@ export default function ChampionUi({ champion, setChampion, enemy, setEnemy, isP
 
                                 {/* Cooldown overlay */}
                                 {cooldown > 0 && (
-                                    <div className="absolute bottom-0 left-0 h-full w-full border bg-black bg-opacity-50 flex items-center justify-center text-xs font-bold text-white">
+                                    <div className="absolute bottom-0 left-0 h-full w-full border border-black bg-black opacity-80 flex items-center justify-center text-xs font-bold text-white">
                                         {cooldown}
                                     </div>
                                 )}
                             </div>
                             {/* Tooltip on hover */}
-                            <div className="absolute bottom-full mb-1 w-24 bg-black text-white text-xs p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                                CD: {skill.cooldown - 1}s
+                            <div className="absolute left-1/2 translate-x-[-50%]  w-[10vw] h-[10vh] flex flex-col place-content-center text-center
+                            mb-1 border bg-gray-600 text-white text-xs p-1 rounded 
+                            opacity-0 group-hover:opacity-100 transition-opacity
+                            ">
+                                {skill.physicalDamage && <div className="">Physical Damage: {skill.physicalDamage}</div>}
+                                {skill.trueDamage && <div className="">True Damage: {skill.trueDamage}</div>}
+                                {skill.armorCrack && <div className="">Armor Crack: {skill.armorCrack}</div>}
+                                {skill.tenacityCrack && <div className="">Tenacity Crack: {skill.tenacityCrack}</div>}
+                                {skill.armorBoost && <div className="">Armor Boost: {skill.armorBoost}</div>}
+                                <div>CD: {skill.cooldown - 1}s</div>
+
                             </div>
                         </div>
                     );
