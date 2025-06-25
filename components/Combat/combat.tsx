@@ -1,10 +1,10 @@
 'use client'
-import ChampionUi from "./UI/championUi";
+import ChampionUi from "../UI/championUi";
 import { championsData } from '@/lib/championData';
 import React, { Suspense, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { ChampionModel } from "./championModel";
-import MainUi from "./UI/mainUi";
+import { ChampionModel } from "../championModel";
+import MainUi from "../UI/mainUi";
 
 
 export default function Combat({ player, setPlayer, enemy, setEnemy }: CombatProps) {
