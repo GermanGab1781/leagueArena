@@ -4,6 +4,22 @@ type turn = {
     playerTurn: boolean;
 }
 
+/* Map Info */
+type mapCords = {
+    x:number;
+    y:number;
+}
+type mapRowProps ={
+    playerCords:mapCords;
+    setPlayerCords:Dispatch<SetStateAction<mapCords>>;
+    rowY:number;
+}
+type mapNodeProps={
+    playerCords:mapCords;
+    setPlayerCords:Dispatch<SetStateAction<mapCords>>;
+    x:number;
+    y:number
+}
 
 /* combat info */
 type champion = {
