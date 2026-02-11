@@ -3,56 +3,32 @@
 import { useState } from "react";
 import { useGLTF } from '@react-three/drei';
 import Combat from "@/components/Combat/combat";
+import { createChampion } from "@/lib/champions";
+
 useGLTF.preload('/models/Garen/Garen.glb');
 useGLTF.preload('/models/Darius/Darius.glb');
-export default function CombatPage() {
-    /* TODO lib of champions mechanics */
-    /* Always put one more second for cooldown */
-    const garen: champion = {
-        name: "Garen",
-        maxHealth: 100,
-        currentHealth: 100,
-        armor: 10,
-        baseArmor: 10,
-        baseTenacity: 25,
-        tenacity: 25,
-        buffs: [],
-        debuffs: [],
-        stunned: false,
-        skills: {
-            Attack: { type: "attack", physicalDamage: 10, time: 700, cooldown: 3 },
-            Q: { type: "attack", physicalDamage: 30, time: 5000, cooldown: 2 },
-            W: { type: "buff", armorBoost: 5, time: 2000, cooldown: 4 },
-            E: { type: "attack", physicalDamage: 25, armorCrack: 1, time: 200, cooldown: 0 },
-            R: { type: "attack", trueDamage: 50, time: 2000, cooldown: 6 }
-        },
-    }
-    const darius: champion = {
-        name: "Darius",
-        maxHealth: 100,
-        currentHealth: 100,
-        armor: 5,
-        baseArmor: 5,
-        baseTenacity: 25,
-        tenacity: 25,
-        buffs: [],
-        debuffs: [],
-        stunned: false,
-        skills: {
-            Attack: { type: "attack", physicalDamage: 10, time: 2000, cooldown: 0 },
-            Q: { type: "attack", physicalDamage: 15, heal: 5, time: 2000, cooldown: 3 },
-            W: { type: "attack", physicalDamage: 25, time: 2000, cooldown: 4 },
-            E: { type: "attack", physicalDamage: 10, armorCrack: 10, tenacityCrack: 1, time: 200, cooldown: 1 },
-            R: { type: "attack", physicalDamage: 50, time: 2000, cooldown: 4 }
-        },
-    }
 
-    const [player, setPlayer] = useState<champion>(garen)
-    const [enemy, setEnemy] = useState<champion>(darius)
+export default function CombatPage() {
+    const [fightKey, setFightKey] = useState(0);
+    const [player, setPlayer] = useState<champion>(() => createChampion("garen"));
+    const [enemy, setEnemy] = useState<champion>(() => createChampion("darius"));
+
+    const resetFight = () => {
+        setPlayer(createChampion("garen"));
+        setEnemy(createChampion("darius"));
+        setFightKey((prev) => prev + 1);
+    };
 
     return (
-        <div>
-            <Combat player={player} setPlayer={setPlayer} enemy={enemy} setEnemy={setEnemy} />
+        <div className="h-screen w-screen p-2">
+            <button
+                type="button"
+                onClick={resetFight}
+                className="border px-3 py-1 mb-2 bg-neutral-900 hover:bg-neutral-800"
+            >
+                Reset Duel
+            </button>
+            <Combat key={fightKey} player={player} setPlayer={setPlayer} enemy={enemy} setEnemy={setEnemy} />
         </div>
     )
 }

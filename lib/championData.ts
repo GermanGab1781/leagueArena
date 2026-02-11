@@ -1,7 +1,7 @@
 // Helper to map string[] to AnimationStep[] with optional movement and rotation
 const steps = (
   names: string[],
-  skillName:string,
+  skillName: keyof ChampionAnimations,
   movement?: Partial<Record<number, AnimationStep['moveTo']>>,
   rotation?: Partial<Record<number, AnimationStep['rotateTo']>>,
   sfx?: Partial<Record<number, AnimationStep['sfx']>>

@@ -2,130 +2,137 @@
 type turn = {
     number: number;
     playerTurn: boolean;
-}
+};
+
+type CombatStatus = "active" | "playerWon" | "playerLost";
+type ChampionId = "garen" | "darius";
+type SkillKey = "Attack" | "Q" | "W" | "E" | "R";
+type SkillUpgradeKey = Exclude<SkillKey, "Attack">;
+type SkillCooldowns = Record<SkillKey, number>;
 
 /* Map Info */
 type mapCords = {
-    x:number;
-    y:number;
-}
-type mapRowProps ={
-    playerCords:mapCords;
-    setPlayerCords:Dispatch<SetStateAction<mapCords>>;
-    rowY:number;
-}
-type mapNodeProps={
-    playerCords:mapCords;
-    setPlayerCords:Dispatch<SetStateAction<mapCords>>;
-    x:number;
-    y:number
-}
+    x: number;
+    y: number;
+};
 
-/* combat info */
+type mapRowProps = {
+    playerCords: mapCords;
+    setPlayerCords: React.Dispatch<React.SetStateAction<mapCords>>;
+    rowY: number;
+};
+
+type mapNodeProps = {
+    playerCords: mapCords;
+    setPlayerCords: React.Dispatch<React.SetStateAction<mapCords>>;
+    x: number;
+    y: number;
+};
+
+/* Combat Info */
 type champion = {
     name: string;
     maxHealth: number;
     currentHealth: number;
-    maxMana?:number;
-    currentMana?:number;
+    maxMana?: number;
+    currentMana?: number;
     armor: number;
-    baseArmor:number;
-    debuffs:Debuff[];
-    buffs:Buff[];
+    baseArmor: number;
+    debuffs: Debuff[];
+    buffs: Buff[];
     tenacity: number;
-    baseTenacity:number;
-    skills: skills;
+    baseTenacity: number;
+    skills: Skills;
+    upgradedSkills: Partial<Record<SkillUpgradeKey, number>>;
     stunned: boolean;
-}
-
+};
 
 type Debuff = {
     type: "armorCrack" | "tenacityCrack" | "stun" | "custom";
     value: number;
     duration: number;
-    remaining: number; 
+    remaining: number;
 };
+
 type Buff = {
     type: "armorBoost" | "tenacityBoost" | "stun" | "custom";
     value: number;
     duration: number;
-    remaining: number; 
+    remaining: number;
 };
 
 type Skill = {
     type: "attack" | "defense" | "debuff" | "buff";
     time: number;
-    cooldown:number;
+    cooldown: number;
 
-    // Attack-related
     physicalDamage?: number;
     trueDamage?: number;
     heal?: number;
     debuff?: number;
 
-    // Defense-related
     armorBoost?: number;
     tenacityBoost?: number;
 
-    // Debuff-related
     armorCrack?: number;
     tenacityCrack?: number;
 };
 
-type Skills = {
-    Attack:Skill;
-    Q: Skill;
-    W: Skill;
-    E: Skill;
-    R: Skill;
-};
+type Skills = Record<SkillKey, Skill>;
 
-
-/* 3D info */
+/* 3D Info */
 type CombatProps = {
     player: champion;
     setPlayer: React.Dispatch<React.SetStateAction<champion>>;
     enemy: champion;
     setEnemy: React.Dispatch<React.SetStateAction<champion>>;
+    onPlayerWin?: (player: champion, enemy: champion) => void;
+    onPlayerLose?: (player: champion, enemy: champion) => void;
 };
+
 type ChampionUiProps = {
-    champion: champion,
-    setChampion: React.Dispatch<React.SetStateAction<champion>>,
-    enemy: champion,
-    setEnemy: React.Dispatch<React.SetStateAction<champion>>,
-    isPlayer: boolean,
-    championModelData: ChampionData,
-    setAnimations: React.Dispatch<React.SetStateAction<AnimationStep[]>>
-    setTurn:React.Dispatch<React.SetStateAction<turn>>
-    turn:turn;
-}
+    champion: champion;
+    enemy: champion;
+    isPlayer: boolean;
+    championModelData: ChampionModelData;
+    setAnimations: React.Dispatch<React.SetStateAction<AnimationStep[]>>;
+    turn: turn;
+    cooldowns: SkillCooldowns;
+    isResolvingAction: boolean;
+    combatStatus: CombatStatus;
+    onSkillSelect?: (skillKey: SkillKey) => void;
+};
+
 type MainUiProps = {
     turn: turn;
-    setTurn: React.Dispatch<React.SetStateAction<turn>>,
     player: champion;
-    setPlayer: React.Dispatch<React.SetStateAction<champion>>;
-    playerModelData: ChampionData;
-    setPlayerModelAnim: SetStateAction<AnimationStep[]>;
-    enemyModelData: ChampionData;
-    setEnemyModelAnim: SetStateAction<AnimationStep[]>;
     enemy: champion;
-    setEnemy: React.Dispatch<React.SetStateAction<champion>>;
-}
+    playerModelData: ChampionModelData;
+    enemyModelData: ChampionModelData;
+    setPlayerModelAnim: React.Dispatch<React.SetStateAction<AnimationStep[]>>;
+    setEnemyModelAnim: React.Dispatch<React.SetStateAction<AnimationStep[]>>;
+    playerCooldowns: SkillCooldowns;
+    enemyCooldowns: SkillCooldowns;
+    isResolvingAction: boolean;
+    combatStatus: CombatStatus;
+    onPlayerSkillSelect: (skillKey: SkillKey) => void;
+};
+
 type ChampionModelProps = {
-    data: ChampionData;
+    data: ChampionModelData;
     position: [number, number, number];
     rotation: [number, number, number];
     animationsActive: AnimationStep[];
-    setAnimations: (animations: AnimationStep[]) => void;
+    setAnimations: React.Dispatch<React.SetStateAction<AnimationStep[]>>;
 };
 
 /* Animation types */
 type AnimationStep = {
     name: string;
-    skillName:string;
+    skillName: keyof ChampionAnimations;
     moveTo?: { x?: number; y?: number; z?: number; duration: number };
     rotateTo?: { x?: number; y?: number; z?: number; duration: number };
-    sfx?:{audios?:string[]};
+    sfx?: { audios?: string[] };
 };
 
 type ChampionAnimations = {
@@ -137,7 +144,6 @@ type ChampionAnimations = {
     E: AnimationStep[];
     R: AnimationStep[];
 };
-
 
 type ChampionModelData = {
     name: string;
