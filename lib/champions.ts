@@ -28,6 +28,7 @@ const championTemplates: Record<ChampionId, champion> = {
             E: { type: "attack", physicalDamage: 25, armorCrack: 1, time: 2000, cooldown: 1 },
             R: { type: "attack", trueDamage: 50, time: 2000, cooldown: 6 },
         },
+        affixes: [],
     },
     darius: {
         name: "Darius",
@@ -48,6 +49,7 @@ const championTemplates: Record<ChampionId, champion> = {
             E: { type: "attack", physicalDamage: 8, armorCrack: 6, tenacityCrack: 1, time: 1200, cooldown: 2 },
             R: { type: "attack", physicalDamage: 34, trueDamage: 8, time: 2000, cooldown: 5 },
         },
+        affixes: [],
     },
 };
 
@@ -74,6 +76,7 @@ export function createChampion(id: ChampionId): champion {
         upgradedSkills: {},
         stunned: false,
         skills: cloneSkills(template.skills),
+        affixes: [],
     };
 }
 
@@ -114,5 +117,6 @@ export function scaleChampion(base: champion, scale: number): champion {
         upgradedSkills: { ...base.upgradedSkills },
         stunned: false,
         skills: scaledSkills,
+        affixes: [...base.affixes],
     };
 }

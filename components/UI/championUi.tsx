@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { SKILL_KEYS } from "@/lib/champions";
+import { AFFIX_DEFS } from "@/lib/utils/affixes";
 
 export default function ChampionUi({
     champion,
@@ -65,6 +66,11 @@ export default function ChampionUi({
                     <div className="text-xs">Armor: {champion.armor}</div>
                     <div className="text-xs">Tenacity: {champion.tenacity}</div>
                 </div>
+                {champion.affixes.length > 0 && (
+                    <div className="text-xs text-orange-300">
+                        Affixes: {champion.affixes.map((id) => AFFIX_DEFS[id]?.label ?? id).join(", ")}
+                    </div>
+                )}
                 {!isPlayer && combatStatus === "active" && turn.playerTurn === false && (
                     <div className="text-xs text-red-300 mt-1">Enemy is choosing...</div>
                 )}

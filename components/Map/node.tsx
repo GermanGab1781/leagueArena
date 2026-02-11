@@ -2,7 +2,7 @@ type MapNodeData = {
     id: string;
     row: number;
     order: number;
-    kind?: "boss";
+    kind: MapNodeKind;
 };
 
 type MapNodeProps = {
@@ -15,17 +15,22 @@ type MapNodeProps = {
 };
 
 export default function MapNode({ node, isCurrent, isSelectable, isActive, isCompleted, onSelect }: MapNodeProps) {
-    let display = ".";
+    const kindDisplay: Record<MapNodeKind, string> = {
+        combat: "C",
+        elite: "E",
+        event: "?",
+        shop: "$",
+        rest: "R",
+        boss: "B",
+    };
+
+    let display = kindDisplay[node.kind];
     if (isCurrent) {
         display = "X";
     } else if (isActive) {
         display = "!";
     } else if (isCompleted) {
         display = "V";
-    } else if (node.kind === "boss") {
-        display = isSelectable ? "B" : ".";
-    } else if (isSelectable) {
-        display = "O";
     }
 
     const className = `select-none font-bold text-xl px-2 py-1 rounded ${
@@ -42,11 +47,11 @@ export default function MapNode({ node, isCurrent, isSelectable, isActive, isCom
 
     if (isSelectable) {
         return (
-            <button type="button" onClick={() => onSelect(node.id)} className={className}>
+            <button data-map-node-id={node.id} type="button" onClick={() => onSelect(node.id)} className={className}>
                 {display}
             </button>
         );
     }
 
-    return <div className={className}>{display}</div>;
+    return <div data-map-node-id={node.id} className={className}>{display}</div>;
 }

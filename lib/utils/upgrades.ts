@@ -15,6 +15,50 @@ export type UpgradeOption =
         description: string;
     };
 
+export function applyDirectSkillUpgrade(unit: champion, key: SkillUpgradeKey, stacks = 1): champion {
+    let nextUnit = unit;
+    for (let index = 0; index < stacks; index += 1) {
+        const baseSkill = nextUnit.skills[key];
+        const nextSkill: Skill = { ...baseSkill };
+
+        if (key === "Q") {
+            nextSkill.physicalDamage = (nextSkill.physicalDamage ?? 0) + 8;
+            nextSkill.armorCrack = (nextSkill.armorCrack ?? 0) + 2;
+        }
+
+        if (key === "W") {
+            nextSkill.heal = (nextSkill.heal ?? 0) + 16;
+            nextSkill.armorBoost = (nextSkill.armorBoost ?? 0) + 3;
+            nextSkill.tenacityBoost = (nextSkill.tenacityBoost ?? 0) + 3;
+        }
+
+        if (key === "E") {
+            nextSkill.physicalDamage = (nextSkill.physicalDamage ?? 0) + 6;
+            nextSkill.tenacityCrack = (nextSkill.tenacityCrack ?? 0) + 2;
+        }
+
+        if (key === "R") {
+            nextSkill.trueDamage = (nextSkill.trueDamage ?? 0) + 14;
+            nextSkill.physicalDamage = (nextSkill.physicalDamage ?? 0) + 8;
+            nextSkill.cooldown = Math.max(0, nextSkill.cooldown - 1);
+        }
+
+        nextUnit = {
+            ...nextUnit,
+            skills: {
+                ...nextUnit.skills,
+                [key]: nextSkill,
+            },
+            upgradedSkills: {
+                ...nextUnit.upgradedSkills,
+                [key]: (nextUnit.upgradedSkills[key] ?? 0) + 1,
+            },
+        };
+    }
+
+    return nextUnit;
+}
+
 const createRng = (seed: number) => {
     let t = seed >>> 0;
     return () => {
@@ -126,47 +170,10 @@ function applyStatUpgrade(unit: champion, option: Extract<UpgradeOption, { kind:
 }
 
 function applySkillUpgrade(unit: champion, option: Extract<UpgradeOption, { kind: "skill" }>): champion {
-    const key = option.skill;
-    const baseSkill = unit.skills[key];
-    const nextSkill: Skill = { ...baseSkill };
-
-    if (key === "Q") {
-        nextSkill.physicalDamage = (nextSkill.physicalDamage ?? 0) + 8;
-        nextSkill.armorCrack = (nextSkill.armorCrack ?? 0) + 2;
-    }
-
-    if (key === "W") {
-        nextSkill.heal = (nextSkill.heal ?? 0) + 16;
-        nextSkill.armorBoost = (nextSkill.armorBoost ?? 0) + 3;
-        nextSkill.tenacityBoost = (nextSkill.tenacityBoost ?? 0) + 3;
-    }
-
-    if (key === "E") {
-        nextSkill.physicalDamage = (nextSkill.physicalDamage ?? 0) + 6;
-        nextSkill.tenacityCrack = (nextSkill.tenacityCrack ?? 0) + 2;
-    }
-
-    if (key === "R") {
-        nextSkill.trueDamage = (nextSkill.trueDamage ?? 0) + 14;
-        nextSkill.physicalDamage = (nextSkill.physicalDamage ?? 0) + 8;
-        nextSkill.cooldown = Math.max(0, nextSkill.cooldown - 1);
-    }
-
-    return {
-        ...unit,
-        skills: {
-            ...unit.skills,
-            [key]: nextSkill,
-        },
-        upgradedSkills: {
-            ...unit.upgradedSkills,
-            [key]: (unit.upgradedSkills[key] ?? 0) + 1,
-        },
-    };
+    return applyDirectSkillUpgrade(unit, option.skill);
 }
 
 export function applyUpgradeOption(unit: champion, option: UpgradeOption): champion {
     if (option.kind === "stat") return applyStatUpgrade(unit, option);
     return applySkillUpgrade(unit, option);
 }
-

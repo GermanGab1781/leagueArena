@@ -9,6 +9,23 @@ type ChampionId = "garen" | "darius";
 type SkillKey = "Attack" | "Q" | "W" | "E" | "R";
 type SkillUpgradeKey = Exclude<SkillKey, "Attack">;
 type SkillCooldowns = Record<SkillKey, number>;
+type MapNodeKind = "combat" | "elite" | "event" | "shop" | "rest" | "boss";
+type RelicId =
+    | "giants_blood"
+    | "vanguard_plate"
+    | "steadfast_idol"
+    | "war_banner"
+    | "sharpening_stone"
+    | "runic_lens"
+    | "spirit_totem"
+    | "first_blood_sigil";
+type EnemyAffixId =
+    | "fortified"
+    | "frenzied"
+    | "swift"
+    | "bulwark"
+    | "thorned"
+    | "vampiric";
 
 /* Map Info */
 type mapCords = {
@@ -45,6 +62,7 @@ type champion = {
     skills: Skills;
     upgradedSkills: Partial<Record<SkillUpgradeKey, number>>;
     stunned: boolean;
+    affixes: EnemyAffixId[];
 };
 
 type Debuff = {
@@ -86,6 +104,7 @@ type CombatProps = {
     setPlayer: React.Dispatch<React.SetStateAction<champion>>;
     enemy: champion;
     setEnemy: React.Dispatch<React.SetStateAction<champion>>;
+    playerRelics?: RelicId[];
     onPlayerWin?: (player: champion, enemy: champion) => void;
     onPlayerLose?: (player: champion, enemy: champion) => void;
 };

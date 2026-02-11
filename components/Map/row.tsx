@@ -4,7 +4,7 @@ type MapNodeData = {
     id: string;
     row: number;
     order: number;
-    kind?: "boss";
+    kind: MapNodeKind;
 };
 
 type MapRowProps = {

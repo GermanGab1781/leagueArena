@@ -12,7 +12,7 @@ import { isDead, processTurnStart, resolveSkillCast, tickCooldowns } from '@/lib
 const TURN_SKIP_DELAY_MS = 700;
 const AI_THINK_DELAY_MS = 900;
 
-export default function Combat({ player, setPlayer, enemy, setEnemy, onPlayerLose, onPlayerWin }: CombatProps) {
+export default function Combat({ player, setPlayer, enemy, setEnemy, playerRelics = [], onPlayerLose, onPlayerWin }: CombatProps) {
     const playerKey = player.name.toLowerCase();
     const enemyKey = enemy.name.toLowerCase();
 
@@ -40,6 +40,8 @@ export default function Combat({ player, setPlayer, enemy, setEnemy, onPlayerLos
     const actionTakenTurnKeyRef = useRef<string | null>(null);
     const aiScheduledTurnKeyRef = useRef<string | null>(null);
     const hasFinishedRef = useRef(false);
+    const playerFirstActionUsedRef = useRef(false);
+    const enemyFirstActionUsedRef = useRef(false);
     const timeoutHandles = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
     useEffect(() => {
@@ -130,6 +132,12 @@ export default function Combat({ player, setPlayer, enemy, setEnemy, onPlayerLos
         actionTakenTurnKeyRef.current = turnKey;
         setIsResolvingAction(true);
         isResolvingActionRef.current = true;
+        const isFirstAction = isPlayerActor ? !playerFirstActionUsedRef.current : !enemyFirstActionUsedRef.current;
+        if (isPlayerActor) {
+            playerFirstActionUsedRef.current = true;
+        } else {
+            enemyFirstActionUsedRef.current = true;
+        }
 
         if (isPlayerActor) {
             setPlayerModelAnim(playerModelData.animations[skillKey]);
@@ -142,7 +150,12 @@ export default function Combat({ player, setPlayer, enemy, setEnemy, onPlayerLos
 
             const latestActor = isPlayerActor ? playerRef.current : enemyRef.current;
             const latestTarget = isPlayerActor ? enemyRef.current : playerRef.current;
-            const result = resolveSkillCast(latestActor, latestTarget, skillKey);
+            const result = resolveSkillCast(latestActor, latestTarget, skillKey, {
+                attackerRelics: isPlayerActor ? playerRelics : [],
+                isAttackerFirstActionOfCombat: isFirstAction,
+                attackerAffixes: latestActor.affixes,
+                defenderAffixes: latestTarget.affixes,
+            });
 
             if (isPlayerActor) {
                 playerRef.current = result.attacker;
@@ -178,6 +191,7 @@ export default function Combat({ player, setPlayer, enemy, setEnemy, onPlayerLos
     }, [
         enemyModelData.animations,
         finishCombat,
+        playerRelics,
         playerModelData.animations,
         registerTimeout,
         setEnemy,
