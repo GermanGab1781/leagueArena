@@ -1,35 +1,60 @@
 import ChampionUi from "./championUi";
 
-export default function MainUi({turn,setTurn,player,playerModelData,setPlayer,setPlayerModelAnim,enemy,enemyModelData,setEnemy,setEnemyModelAnim}:MainUiProps) {
+export default function MainUi({
+    turn,
+    player,
+    playerModelData,
+    setPlayerModelAnim,
+    enemy,
+    enemyModelData,
+    setEnemyModelAnim,
+    playerCooldowns,
+    enemyCooldowns,
+    isResolvingAction,
+    combatStatus,
+    onPlayerSkillSelect,
+}: MainUiProps) {
+    const combatLabel =
+        combatStatus === "playerWon"
+            ? "VICTORY"
+            : combatStatus === "playerLost"
+                ? "DEFEAT"
+                : turn.playerTurn
+                    ? "YOUR TURN"
+                    : "ENEMY TURN";
+
     return (
         <div className="w-full">
-            <div className="absolute top-0 text-center w-full text-5xl">TURN:{turn.number}</div>
+            <div className="absolute top-0 text-center w-full text-4xl md:text-5xl">
+                TURN:{turn.number} - {combatLabel}
+            </div>
             <div className="absolute left-5 bottom-[20%]">
                 <ChampionUi
                     champion={player}
-                    setChampion={setPlayer}
                     enemy={enemy}
-                    setEnemy={setEnemy}
                     championModelData={playerModelData}
                     setAnimations={setPlayerModelAnim}
-                    isPlayer={true}
                     turn={turn}
-                    setTurn={setTurn}
+                    cooldowns={playerCooldowns}
+                    isResolvingAction={isResolvingAction}
+                    combatStatus={combatStatus}
+                    isPlayer={true}
+                    onSkillSelect={onPlayerSkillSelect}
                 />
             </div>
             <div className="absolute right-5 top-[20%]">
                 <ChampionUi
                     champion={enemy}
-                    setChampion={setEnemy}
                     enemy={player}
-                    setEnemy={setPlayer}
                     championModelData={enemyModelData}
                     setAnimations={setEnemyModelAnim}
-                    isPlayer={false}
                     turn={turn}
-                    setTurn={setTurn}
+                    cooldowns={enemyCooldowns}
+                    isResolvingAction={isResolvingAction}
+                    combatStatus={combatStatus}
+                    isPlayer={false}
                 />
             </div>
         </div>
-        )
+    );
 }

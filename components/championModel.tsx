@@ -6,6 +6,12 @@ import { Group } from 'three';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 
+type AnimationFinishedEvent = THREE.Event & {
+  action: THREE.AnimationAction;
+};
+
+const CHAMPION_SFX_VOLUME = 0.09;
+
 export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0], animationsActive, setAnimations }: ChampionModelProps) {
   const [currentAnimation, setCurrentAnimation] = useState<AnimationStep[]>(animationsActive);
   const [animationIndex, setAnimationIndex] = useState(0);
@@ -53,13 +59,15 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
     const animStep = currentAnimation[animationIndex];
     const currentAction = actions[animStep.name];
     const skillName = animStep.skillName;
-    const sfxForStep = data.animations[skillName][animationIndex].sfx?.audios;
+    const skillAnimationSteps = data.animations[skillName];
+    const sfxForStep = skillAnimationSteps?.[animationIndex]?.sfx?.audios;
     /* console.log(sfxForStep) */
     
     if (sfxForStep?.length) {
       const randomAudio = getRandomString(sfxForStep);
       if (randomAudio) {
         const audio = new Audio(randomAudio);
+        audio.volume = CHAMPION_SFX_VOLUME;
         audio.play().catch(err => console.error('Audio playback error:', err));
       }
     }
@@ -111,7 +119,7 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
     }
 
     const onFinished = (e: THREE.Event) => {
-      const finishedEvent = e as any;
+      const finishedEvent = e as AnimationFinishedEvent;
       if (finishedEvent.action === currentAction) {
         if (animationIndex + 1 < currentAnimation.length) {
           setAnimationIndex(prev => prev + 1);

@@ -14,10 +14,10 @@ export default function Menu() {
             {/* Menu */}
             <div className="absolute md:w-[50vw] w-[95vw] bottom-10 left-1/2 -translate-x-1/2 ">
                 <div className="flex flex-col gap-y-3">
-                    <Link className="" href={"/combat"}>
+                    <Link className="" href={"/map"}>
                         <div className="p-5 bg-blue-900 hover:bg-blue-800 border">New Game</div>
                     </Link>
-                    <Link className="" href={"/combat"}>
+                    <Link className="" href={"/map"}>
                         <div className="p-5 bg-blue-900 hover:bg-blue-800 border">Load Game</div>
                     </Link>
                 </div>
