@@ -13,7 +13,7 @@
     "@react-three/fiber": "^9.1.2",
     "@tailwindcss/postcss": "^4.1.7",
     "autoprefixer": "^10.4.21",
-    "next": "15.1.8",
+    "next": "15.1.11",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwindcss": "^4.0.0",
