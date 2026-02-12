@@ -120,6 +120,8 @@ type ChampionUiProps = {
     isResolvingAction: boolean;
     combatStatus: CombatStatus;
     onSkillSelect?: (skillKey: SkillKey) => void;
+    onSkillHover?: (skillKey: SkillKey | null) => void;
+    previewSkillKey?: SkillKey | null;
 };
 
 type MainUiProps = {

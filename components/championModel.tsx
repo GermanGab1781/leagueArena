@@ -5,14 +5,17 @@ import { useEffect, useRef, useState } from 'react';
 import { Group } from 'three';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
+import { useAudioSettings } from './Settings/audioSettings';
 
 type AnimationFinishedEvent = THREE.Event & {
   action: THREE.AnimationAction;
 };
 
-const CHAMPION_SFX_VOLUME = 0.09;
+const DEFAULT_CHAMPION_SFX_VOLUME = 0.09;
 
 export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0], animationsActive, setAnimations }: ChampionModelProps) {
+  const audioSettings = useAudioSettings();
+  const championSfxVolume = audioSettings?.sfxVolume ?? DEFAULT_CHAMPION_SFX_VOLUME;
   const [currentAnimation, setCurrentAnimation] = useState<AnimationStep[]>(animationsActive);
   const [animationIndex, setAnimationIndex] = useState(0);
 
@@ -67,7 +70,7 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
       const randomAudio = getRandomString(sfxForStep);
       if (randomAudio) {
         const audio = new Audio(randomAudio);
-        audio.volume = CHAMPION_SFX_VOLUME;
+        audio.volume = championSfxVolume;
         audio.play().catch(err => console.error('Audio playback error:', err));
       }
     }
@@ -140,7 +143,7 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
     return () => {
       mixer.removeEventListener('finished', onFinished);
     };
-  }, [actions, animationIndex, currentAnimation, mixer, data.animations.idle, setAnimations, animations]);
+  }, [actions, animationIndex, currentAnimation, mixer, data.animations.idle, setAnimations, animations, championSfxVolume]);
 
   useFrame(() => {
     if (!ref.current) return;

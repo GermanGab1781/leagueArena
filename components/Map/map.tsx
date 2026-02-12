@@ -610,21 +610,45 @@ export default function MapView() {
 
             <div className="flex flex-col gap-y-20">
                 {pendingOverlay?.kind === "upgrade" && (
-                    <div className="border-2 border-yellow-500 bg-neutral-900/90 p-4 flex flex-col gap-3">
-                        <div className="text-center text-lg text-yellow-300">Victory Reward: choose one upgrade</div>
-                        <div className="text-center text-sm text-green-300">You recovered +12 HP from this win.</div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            {pendingOverlay.options.map((option) => (
-                                <button
-                                    key={option.id}
-                                    type="button"
-                                    onClick={() => onSelectUpgrade(option)}
-                                    className="border border-yellow-500 hover:bg-yellow-900/30 px-3 py-3 text-left"
-                                >
-                                    <div className="font-bold text-yellow-300">{option.label}</div>
-                                    <div className="text-sm">{option.description}</div>
-                                </button>
-                            ))}
+                    <div className="fixed inset-0 z-[120] bg-black/75 flex items-center justify-center p-4">
+                        <div className="w-full max-w-6xl min-h-[74vh] border-2 border-amber-300/70 bg-[radial-gradient(ellipse_at_top,#2b2012,#1a120b_55%,#120b06)] text-amber-100 p-4 md:p-8 grid grid-rows-[auto_1fr_auto] gap-6 shadow-[0_0_40px_rgba(251,191,36,0.18)]">
+                            <pre className="font-mono text-[10px] md:text-xs text-amber-200/90 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|   __      __  _____   _____   _______   ____   _____   __   __                  |
+|   \\ \\    / / |_   _| / ____| |__   __| / __ \\ |  __ \\  \\ \\ / /                  |
+|    \\ \\  / /    | |  | |         | |   | |  | || |__) |  \\ V /                   |
+|     \\ \\/ /     | |  | |         | |   | |  | ||  _  /    > <                    |
+|      \\  /     _| |_ | |____     | |   | |__| || | \\ \\   / . \\                   |
+|       \\/     |_____| \\_____|    |_|    \\____/ |_|  \\_\\ /_/ \\_\\                  |
+|                                                                                  |
+|                         R E W A R D   C H A R T E R                              |
++----------------------------------------------------------------------------------+`}
+                            </pre>
+
+                            <div className="flex flex-col items-center justify-center gap-5">
+                                <div className="text-center text-2xl md:text-4xl tracking-[0.16em] text-amber-200">CHOOSE YOUR BOON</div>
+                                <div className="text-center text-sm md:text-base text-emerald-300">Recovered +12 HP from victory.</div>
+
+                                <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-5">
+                                    {pendingOverlay.options.map((option) => (
+                                        <button
+                                            key={option.id}
+                                            type="button"
+                                            onClick={() => onSelectUpgrade(option)}
+                                            className="min-h-[150px] border border-amber-300/70 bg-black/20 hover:bg-amber-900/25 px-5 py-5 text-left transition-colors"
+                                        >
+                                            <div className="font-bold text-amber-200 text-xl tracking-wide">{option.label}</div>
+                                            <div className="text-sm md:text-base text-amber-100/90 mt-2">{option.description}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <pre className="font-mono text-[10px] md:text-xs text-amber-200/85 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|  [SEAL] \"Steel remembers. Will decides. Choose and advance to the next trial.\" |
++----------------------------------------------------------------------------------+`}
+                            </pre>
                         </div>
                     </div>
                 )}
