@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { SKILL_KEYS } from "@/lib/champions";
 import { AFFIX_DEFS } from "@/lib/utils/affixes";
+import { resolveSkillCast } from "@/lib/utils/combat";
+import { getRelicDamageBonus, RELIC_DEFS } from "@/lib/utils/relics";
 
 type StatBreakdown = {
     base: number;
@@ -21,6 +23,17 @@ type DamageFlashState = {
 
 const DAMAGE_FLASH_DURATION_MS = 680;
 
+const RELIC_ICON_META: Record<RelicId, { glyph: string; short: string }> = {
+    giants_blood: { glyph: "GB", short: "Blood" },
+    vanguard_plate: { glyph: "VP", short: "Plate" },
+    steadfast_idol: { glyph: "SI", short: "Idol" },
+    war_banner: { glyph: "WB", short: "Banner" },
+    sharpening_stone: { glyph: "SS", short: "Stone" },
+    runic_lens: { glyph: "RL", short: "Lens" },
+    spirit_totem: { glyph: "ST", short: "Totem" },
+    first_blood_sigil: { glyph: "FS", short: "Sigil" },
+};
+
 type SkillDamageEstimate = {
     basePhysicalDamage: number;
     finalPhysicalDamage: number;
@@ -31,7 +44,12 @@ type SkillDamageEstimate = {
     executeThreshold: number | null;
 };
 
-function estimateChampionSkillDamage(attacker: champion, defender: champion, skillKey: SkillKey): SkillDamageEstimate {
+function estimateChampionSkillDamage(
+    attacker: champion,
+    defender: champion,
+    skillKey: SkillKey,
+    context: { attackerRelics: RelicId[]; isAttackerFirstActionOfCombat: boolean }
+): SkillDamageEstimate {
     const skill = attacker.skills[skillKey];
     if (!skill) {
         return {
@@ -46,17 +64,23 @@ function estimateChampionSkillDamage(attacker: champion, defender: champion, ski
     }
 
     const basePhysicalDamage = skill.physicalDamage ?? 0;
-    const finalPhysicalDamage = Math.max(basePhysicalDamage - defender.armor, 0);
+    const relicDamageBonus = getRelicDamageBonus({
+        relics: context.attackerRelics,
+        skillKey,
+        isFirstActionOfCombat: context.isAttackerFirstActionOfCombat,
+    });
+    const finalPhysicalDamage = Math.max(basePhysicalDamage + relicDamageBonus.bonusPhysical - defender.armor, 0);
     const baseTrueDamage = skill.trueDamage ?? 0;
-    let bonusTrueDamage = 0;
-    let totalDamage = finalPhysicalDamage + baseTrueDamage;
+    let bonusTrueDamage = relicDamageBonus.bonusTrue;
+    let totalDamage = finalPhysicalDamage + baseTrueDamage + bonusTrueDamage;
     let isExecute = false;
     let executeThreshold: number | null = null;
     const attackerName = attacker.name.toLowerCase();
 
     if (attackerName === "garen" && skillKey === "R") {
         executeThreshold = Math.floor(defender.maxHealth * 0.3);
-        if (defender.currentHealth <= executeThreshold) {
+        const healthAfterBaseHit = Math.max(defender.currentHealth - totalDamage, 0);
+        if (healthAfterBaseHit <= executeThreshold) {
             isExecute = true;
             totalDamage = defender.currentHealth;
         }
@@ -64,16 +88,29 @@ function estimateChampionSkillDamage(attacker: champion, defender: champion, ski
 
     if (attackerName === "darius" && skillKey === "R") {
         const armorCrackStacks = defender.debuffs.filter((debuff) => debuff.type === "armorCrack").length;
-        bonusTrueDamage = armorCrackStacks * 6;
+        bonusTrueDamage += armorCrackStacks * 6;
         totalDamage = finalPhysicalDamage + baseTrueDamage + bonusTrueDamage;
     }
+
+    const projected = resolveSkillCast(
+        attacker,
+        defender,
+        skillKey,
+        {
+            attackerRelics: context.attackerRelics,
+            isAttackerFirstActionOfCombat: context.isAttackerFirstActionOfCombat,
+            attackerAffixes: attacker.affixes,
+            defenderAffixes: defender.affixes,
+        }
+    );
+    const projectedTotalDamage = Math.max(0, Math.min(projected.totalDamageDealt, defender.currentHealth));
 
     return {
         basePhysicalDamage,
         finalPhysicalDamage,
         baseTrueDamage,
         bonusTrueDamage,
-        totalDamage: Math.max(0, Math.min(totalDamage, defender.currentHealth)),
+        totalDamage: projectedTotalDamage,
         isExecute,
         executeThreshold,
     };
@@ -180,6 +217,9 @@ export default function ChampionUi({
     onSkillSelect,
     onSkillHover,
     previewSkillKey,
+    previewAttackerRelics = [],
+    previewAttackerFirstActionAvailable = false,
+    currentRelics = [],
 }: ChampionUiProps) {
     const healthRatio = champion.maxHealth > 0 ? champion.currentHealth / champion.maxHealth : 0;
     const isThisTurn = turn.playerTurn === isPlayer;
@@ -202,7 +242,10 @@ export default function ChampionUi({
     const damageFlashRafRef = useRef<number | null>(null);
     const damageFlashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const previewIncomingDamage = !isPlayer && previewSkillKey
-        ? estimateChampionSkillDamage(enemy, champion, previewSkillKey).totalDamage
+        ? estimateChampionSkillDamage(enemy, champion, previewSkillKey, {
+            attackerRelics: previewAttackerRelics,
+            isAttackerFirstActionOfCombat: previewAttackerFirstActionAvailable,
+        }).totalDamage
         : 0;
     const isPreviewContextActive = !isPlayer && combatStatus === "active" && turn.playerTurn;
     const previewTargetDamage = isPreviewContextActive && previewSkillKey ? previewIncomingDamage : 0;
@@ -320,9 +363,9 @@ export default function ChampionUi({
 
     return (
         <div className="w-full p-2 space-y-2">
-            <div>
-                Debuffs
-                {champion.debuffs.length > 0 && (
+            {champion.debuffs.length > 0 && (
+                <div>
+                    <div className="text-red-300 font-semibold">Debuffs</div>
                     <div className="text-sm flex gap-1 list-disc list-inside">
                         {champion.debuffs.map((debuff, index) => {
                             const info = debuffDetails[debuff.type];
@@ -344,11 +387,36 @@ export default function ChampionUi({
                             );
                         })}
                     </div>
-                )}
-            </div>
-            <div>
-                Buffs
-                {champion.buffs.length > 0 && (
+                </div>
+            )}
+            {currentRelics.length > 0 && (
+                <div>
+                    <div className="text-violet-300 font-semibold">RELICS</div>
+                    <div className="text-sm flex gap-1 list-disc list-inside">
+                        {currentRelics.map((relicId, index) => {
+                            const relicDef = RELIC_DEFS[relicId];
+                            const iconMeta = RELIC_ICON_META[relicId] ?? { glyph: "RE", short: "Relic" };
+                            return (
+                                <div className="relative group" key={`${relicId}-${index}`}>
+                                    <div className="relative w-10 h-10 border-2 rounded-md border-violet-400/75 bg-violet-950/25 flex flex-col items-center justify-center leading-none">
+                                        <span className="text-[11px] font-extrabold text-violet-100 tracking-wide">{iconMeta.glyph}</span>
+                                        <span className="text-[8px] text-violet-300">{iconMeta.short}</span>
+                                    </div>
+                                    <div
+                                        className={`absolute ${edgeTooltipPosition} mt-1 z-20 w-56 max-w-[calc(100vw-1rem)] border bg-neutral-900 text-white text-xs p-2 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity`}
+                                    >
+                                        <div className="font-bold text-violet-300">{relicDef?.label ?? relicId}</div>
+                                        <div>{relicDef?.description ?? "No description available."}</div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+            {champion.buffs.length > 0 && (
+                <div>
+                    <div className="text-green-300 font-semibold">Buffs</div>
                     <div className="text-sm flex gap-1 list-disc list-inside">
                         {champion.buffs.map((buff, index) => {
                             const info = buffDetails[buff.type];
@@ -370,8 +438,8 @@ export default function ChampionUi({
                             );
                         })}
                     </div>
-                )}
-            </div>
+                </div>
+            )}
 
             <div className="text-sm font-bold">
                 <div className={isLethalPreview ? "text-red-400" : ""}>{champion.name}</div>
@@ -497,7 +565,10 @@ export default function ChampionUi({
                     const upgradeLevel = key === "Attack" ? 0 : (champion.upgradedSkills[key] ?? 0);
                     const isUpgradedSkill = key !== "Attack" && upgradeLevel > 0;
 
-                    const estimate = estimateChampionSkillDamage(champion, enemy, key);
+                    const estimate = estimateChampionSkillDamage(champion, enemy, key, {
+                        attackerRelics: previewAttackerRelics,
+                        isAttackerFirstActionOfCombat: previewAttackerFirstActionAvailable,
+                    });
                     const estimatedTotalDamage = estimate.totalDamage;
                     const estimatedTrueDamage = estimate.baseTrueDamage + estimate.bonusTrueDamage;
 

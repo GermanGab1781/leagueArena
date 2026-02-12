@@ -11,10 +11,19 @@ type MapNodeProps = {
     isSelectable: boolean;
     isActive: boolean;
     isCompleted: boolean;
+    isReachableFromCurrent: boolean;
     onSelect: (nodeId: string) => void;
 };
 
-export default function MapNode({ node, isCurrent, isSelectable, isActive, isCompleted, onSelect }: MapNodeProps) {
+export default function MapNode({
+    node,
+    isCurrent,
+    isSelectable,
+    isActive,
+    isCompleted,
+    isReachableFromCurrent,
+    onSelect,
+}: MapNodeProps) {
     const kindDisplay: Record<MapNodeKind, string> = {
         combat: "C",
         elite: "E",
@@ -33,16 +42,18 @@ export default function MapNode({ node, isCurrent, isSelectable, isActive, isCom
         display = "V";
     }
 
-    const className = `select-none font-bold text-xl px-2 py-1 rounded ${
+    const className = `select-none font-bold text-xl px-2 py-1 rounded transition-all ${
         isCurrent
-            ? "bg-emerald-900/70"
+            ? "bg-emerald-900/70 text-emerald-100"
             : isActive
-                ? "bg-yellow-700/70"
+                ? "bg-yellow-600/75 text-yellow-100"
                 : isCompleted
-                    ? "bg-emerald-700/60"
+                    ? "bg-emerald-700/70 text-emerald-100"
                     : isSelectable
-                        ? "cursor-pointer hover:bg-neutral-700"
-                        : "opacity-70"
+                        ? "cursor-pointer text-white hover:bg-neutral-700"
+                        : isReachableFromCurrent
+                            ? "text-slate-200/85 opacity-80"
+                            : "text-slate-500/70 opacity-60"
     }`;
 
     if (isSelectable) {

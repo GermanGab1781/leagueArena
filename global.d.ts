@@ -105,6 +105,7 @@ type CombatProps = {
     enemy: champion;
     setEnemy: React.Dispatch<React.SetStateAction<champion>>;
     playerRelics?: RelicId[];
+    enemyRelics?: RelicId[];
     onPlayerWin?: (player: champion, enemy: champion) => void;
     onPlayerLose?: (player: champion, enemy: champion) => void;
 };
@@ -122,6 +123,9 @@ type ChampionUiProps = {
     onSkillSelect?: (skillKey: SkillKey) => void;
     onSkillHover?: (skillKey: SkillKey | null) => void;
     previewSkillKey?: SkillKey | null;
+    previewAttackerRelics?: RelicId[];
+    previewAttackerFirstActionAvailable?: boolean;
+    currentRelics?: RelicId[];
 };
 
 type MainUiProps = {
@@ -137,6 +141,9 @@ type MainUiProps = {
     isResolvingAction: boolean;
     combatStatus: CombatStatus;
     onPlayerSkillSelect: (skillKey: SkillKey) => void;
+    playerRelics?: RelicId[];
+    enemyRelics?: RelicId[];
+    playerFirstActionAvailable?: boolean;
 };
 
 type ChampionModelProps = {

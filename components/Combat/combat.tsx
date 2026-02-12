@@ -12,7 +12,16 @@ import { isDead, processTurnStart, resolveSkillCast, tickCooldowns } from '@/lib
 const TURN_SKIP_DELAY_MS = 700;
 const AI_THINK_DELAY_MS = 900;
 
-export default function Combat({ player, setPlayer, enemy, setEnemy, playerRelics = [], onPlayerLose, onPlayerWin }: CombatProps) {
+export default function Combat({
+    player,
+    setPlayer,
+    enemy,
+    setEnemy,
+    playerRelics = [],
+    enemyRelics = [],
+    onPlayerLose,
+    onPlayerWin,
+}: CombatProps) {
     const playerKey = player.name.toLowerCase();
     const enemyKey = enemy.name.toLowerCase();
 
@@ -115,6 +124,20 @@ export default function Combat({ player, setPlayer, enemy, setEnemy, playerRelic
         onPlayerLose?.(finalPlayer, finalEnemy);
     }, [clearAllTimeouts, enemyModelData.animations.death, onPlayerLose, onPlayerWin, playerModelData.animations.death]);
 
+    const handleDevSkip = useCallback(() => {
+        if (statusRef.current !== "active") return;
+
+        const currentPlayer = playerRef.current;
+        const currentEnemy = {
+            ...enemyRef.current,
+            currentHealth: 0,
+        };
+
+        enemyRef.current = currentEnemy;
+        setEnemy(currentEnemy);
+        finishCombat(true, currentPlayer, currentEnemy);
+    }, [finishCombat, setEnemy]);
+
     const executeSkill = useCallback((skillKey: SkillKey, isPlayerActor: boolean) => {
         if (statusRef.current !== "active") return;
         if (turnRef.current.playerTurn !== isPlayerActor) return;
@@ -151,7 +174,7 @@ export default function Combat({ player, setPlayer, enemy, setEnemy, playerRelic
             const latestActor = isPlayerActor ? playerRef.current : enemyRef.current;
             const latestTarget = isPlayerActor ? enemyRef.current : playerRef.current;
             const result = resolveSkillCast(latestActor, latestTarget, skillKey, {
-                attackerRelics: isPlayerActor ? playerRelics : [],
+                attackerRelics: isPlayerActor ? playerRelics : enemyRelics,
                 isAttackerFirstActionOfCombat: isFirstAction,
                 attackerAffixes: latestActor.affixes,
                 defenderAffixes: latestTarget.affixes,
@@ -190,6 +213,7 @@ export default function Combat({ player, setPlayer, enemy, setEnemy, playerRelic
         }, skill.time);
     }, [
         enemyModelData.animations,
+        enemyRelics,
         finishCombat,
         playerRelics,
         playerModelData.animations,
@@ -298,7 +322,27 @@ export default function Combat({ player, setPlayer, enemy, setEnemy, playerRelic
                 isResolvingAction={isResolvingAction}
                 combatStatus={combatStatus}
                 onPlayerSkillSelect={(skillKey) => executeSkill(skillKey, true)}
+                playerRelics={playerRelics}
+                enemyRelics={enemyRelics}
+                playerFirstActionAvailable={!playerFirstActionUsedRef.current}
             />
+
+            {process.env.NODE_ENV !== "production" && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[160]">
+                    <button
+                        type="button"
+                        onClick={handleDevSkip}
+                        disabled={combatStatus !== "active"}
+                        className={`border px-4 py-2 font-semibold tracking-[0.08em] ${
+                            combatStatus === "active"
+                                ? "border-red-400 bg-red-950/70 text-red-200 hover:bg-red-900/80"
+                                : "border-neutral-700 bg-neutral-900/50 text-neutral-500 cursor-not-allowed"
+                        }`}
+                    >
+                        SKIP
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

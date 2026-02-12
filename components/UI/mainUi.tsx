@@ -14,6 +14,9 @@ export default function MainUi({
     isResolvingAction,
     combatStatus,
     onPlayerSkillSelect,
+    playerRelics = [],
+    enemyRelics = [],
+    playerFirstActionAvailable = false,
 }: MainUiProps) {
     const [previewSkillKey, setPreviewSkillKey] = useState<SkillKey | null>(null);
 
@@ -47,6 +50,9 @@ export default function MainUi({
                         onPlayerSkillSelect(skillKey);
                     }}
                     onSkillHover={setPreviewSkillKey}
+                    previewAttackerRelics={playerRelics}
+                    previewAttackerFirstActionAvailable={playerFirstActionAvailable}
+                    currentRelics={playerRelics}
                 />
             </div>
             <div className="absolute right-5 top-[20%]">
@@ -61,6 +67,9 @@ export default function MainUi({
                     combatStatus={combatStatus}
                     isPlayer={false}
                     previewSkillKey={previewSkillKey}
+                    previewAttackerRelics={playerRelics}
+                    previewAttackerFirstActionAvailable={playerFirstActionAvailable}
+                    currentRelics={enemyRelics}
                 />
             </div>
         </div>

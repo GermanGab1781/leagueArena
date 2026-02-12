@@ -39,6 +39,7 @@ type PendingOverlay =
 const PLAYER_CHAMPION: ChampionId = "garen";
 const ENEMY_POOL: ChampionId[] = ["darius", "garen"];
 const SKILL_UPGRADE_KEYS: SkillUpgradeKey[] = ["Q", "W", "E", "R"];
+const ALL_RELIC_IDS = Object.keys(RELIC_DEFS) as RelicId[];
 
 const createRng = (seed: number) => {
     let t = seed >>> 0;
@@ -97,7 +98,37 @@ const assignNodeKinds = (rowMap: globalThis.Map<number, MapNodeData[]>, seed: nu
     }
 };
 
-const generateEnemyForNode = (node: MapNodeData, seed: number, playerChampionName: string): champion => {
+const rollEnemyRelicsForNode = (node: MapNodeData, seed: number): RelicId[] => {
+    const rng = createRng(hashText(`${seed}-${node.id}-enemy-relics`));
+    let relicCount = 0;
+
+    if (node.kind === "boss") {
+        relicCount = 2 + (rng() > 0.58 ? 1 : 0);
+    } else if (node.kind === "elite") {
+        relicCount = 1 + (node.row >= 4 && rng() > 0.52 ? 1 : 0);
+    } else if (node.kind === "combat") {
+        const chance = node.row >= 4 ? 0.52 : node.row >= 3 ? 0.32 : 0.14;
+        relicCount = rng() < chance ? 1 : 0;
+    }
+
+    if (relicCount <= 0) return [];
+
+    const pool = [...ALL_RELIC_IDS];
+    const picked: RelicId[] = [];
+    while (pool.length > 0 && picked.length < relicCount) {
+        const index = Math.floor(rng() * pool.length);
+        const [relicId] = pool.splice(index, 1);
+        if (relicId) picked.push(relicId);
+    }
+
+    return picked;
+};
+
+const generateEnemyForNode = (
+    node: MapNodeData,
+    seed: number,
+    playerChampionName: string,
+): { enemy: champion; relics: RelicId[] } => {
     const pool = ENEMY_POOL.filter((id) => id !== playerChampionName.toLowerCase());
     const enemyPool = pool.length > 0 ? pool : ENEMY_POOL;
     const pick = hashText(`${seed}-${node.id}`) % enemyPool.length;
@@ -111,8 +142,11 @@ const generateEnemyForNode = (node: MapNodeData, seed: number, playerChampionNam
         nodeKind: node.kind,
         seed: hashText(`${seed}-${node.id}-affixes`),
     });
+    const enemyWithAffixes = applyAffixesOnSpawn(scaledEnemy, affixes);
+    const relics = rollEnemyRelicsForNode(node, seed);
+    const enemyWithRelics = relics.reduce((currentEnemy, relicId) => applyRelicOnAcquire(currentEnemy, relicId), enemyWithAffixes);
 
-    return applyAffixesOnSpawn(scaledEnemy, affixes);
+    return { enemy: enemyWithRelics, relics };
 };
 
 const buildGraphCandidate = (seed: number): MapGraph => {
@@ -154,39 +188,56 @@ const buildGraphCandidate = (seed: number): MapGraph => {
     for (let row = 1; row < rowCount; row += 1) {
         const currentRow = rowMap.get(row) || [];
         const nextRow = rowMap.get(row + 1) || [];
-        const incoming = new globalThis.Map<string, number>();
+        if (currentRow.length === 0 || nextRow.length === 0) continue;
 
+        const incoming = new globalThis.Map<string, number>();
+        const rowEdgeSet = new Set<string>();
         for (const node of nextRow) {
             incoming.set(node.id, 0);
         }
 
-        for (const node of currentRow) {
-            const maxConnections = Math.min(2, nextRow.length);
-            const connections = maxConnections === 1 ? 1 : 1 + (rng() > 0.6 ? 1 : 0);
-            const targets = new Set<string>();
+        const addEdge = (fromId: string, toId: string) => {
+            const edgeKey = `${fromId}->${toId}`;
+            if (rowEdgeSet.has(edgeKey)) return;
 
-            let attempts = 0;
-            while (targets.size < connections && attempts < 30) {
-                const target = nextRow[Math.floor(rng() * nextRow.length)];
-                if (target) targets.add(target.id);
-                attempts += 1;
-            }
+            rowEdgeSet.add(edgeKey);
+            edges.push({ from: fromId, to: toId });
+            incoming.set(toId, (incoming.get(toId) || 0) + 1);
+        };
 
-            if (targets.size === 0 && nextRow.length > 0) {
-                const fallbackTarget = nextRow[Math.floor(rng() * nextRow.length)];
-                if (fallbackTarget) targets.add(fallbackTarget.id);
-            }
+        for (let currentIndex = 0; currentIndex < currentRow.length; currentIndex += 1) {
+            const fromNode = currentRow[currentIndex];
+            const primaryTargetIndex =
+                currentRow.length === 1
+                    ? Math.floor((nextRow.length - 1) / 2)
+                    : Math.round((currentIndex * (nextRow.length - 1)) / (currentRow.length - 1));
 
-            for (const targetId of targets) {
-                edges.push({ from: node.id, to: targetId });
-                incoming.set(targetId, (incoming.get(targetId) || 0) + 1);
+            addEdge(fromNode.id, nextRow[primaryTargetIndex].id);
+
+            const shouldAddAdjacentBranch = nextRow.length > 1 && rng() > 0.74;
+            if (!shouldAddAdjacentBranch) continue;
+
+            const branchDirection = rng() > 0.5 ? 1 : -1;
+            const secondaryTargetIndex = Math.min(
+                nextRow.length - 1,
+                Math.max(0, primaryTargetIndex + branchDirection),
+            );
+
+            if (secondaryTargetIndex !== primaryTargetIndex) {
+                addEdge(fromNode.id, nextRow[secondaryTargetIndex].id);
             }
         }
 
-        for (const [targetId, count] of incoming.entries()) {
-            if (count > 0) continue;
-            const fallback = currentRow[Math.floor(rng() * currentRow.length)];
-            if (fallback) edges.push({ from: fallback.id, to: targetId });
+        for (let targetIndex = 0; targetIndex < nextRow.length; targetIndex += 1) {
+            const targetNode = nextRow[targetIndex];
+            if ((incoming.get(targetNode.id) || 0) > 0) continue;
+
+            const fallbackSourceIndex =
+                nextRow.length === 1
+                    ? Math.floor((currentRow.length - 1) / 2)
+                    : Math.round((targetIndex * (currentRow.length - 1)) / (nextRow.length - 1));
+
+            addEdge(currentRow[fallbackSourceIndex].id, targetNode.id);
         }
     }
 
@@ -241,6 +292,7 @@ export default function MapView() {
     const [runWon, setRunWon] = useState(false);
     const [gold, setGold] = useState(20);
     const [relics, setRelics] = useState<RelicId[]>([]);
+    const [enemyRelics, setEnemyRelics] = useState<RelicId[]>([]);
     const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
     const graphRef = useRef<HTMLDivElement>(null);
     const linesSvgRef = useRef<SVGSVGElement>(null);
@@ -369,6 +421,7 @@ export default function MapView() {
         setRunWon(false);
         setGold(20);
         setRelics([]);
+        setEnemyRelics([]);
     };
 
     const onSelectNode = (nodeId: string) => {
@@ -378,7 +431,9 @@ export default function MapView() {
         if (!selectedNode) return;
 
         if (selectedNode.kind === "combat" || selectedNode.kind === "elite" || selectedNode.kind === "boss") {
-            setEnemy(generateEnemyForNode(selectedNode, mapSeed, player.name));
+            const generated = generateEnemyForNode(selectedNode, mapSeed, player.name);
+            setEnemy(generated.enemy);
+            setEnemyRelics(generated.relics);
             setActiveNodeId(nodeId);
             return;
         }
@@ -567,6 +622,27 @@ export default function MapView() {
     };
 
     const currentLabel = currentNodeId === "start" ? "START" : currentNodeId.toUpperCase();
+    const reachableNodeIds = useMemo(() => {
+        const reachable = new Set<string>();
+        const stack: string[] = [currentNodeId];
+
+        while (stack.length > 0) {
+            const nodeId = stack.pop();
+            if (!nodeId || reachable.has(nodeId)) continue;
+
+            reachable.add(nodeId);
+            const nextNodes = edgesByFrom.get(nodeId);
+            if (!nextNodes) continue;
+
+            for (const nextNodeId of nextNodes) {
+                if (!reachable.has(nextNodeId)) {
+                    stack.push(nextNodeId);
+                }
+            }
+        }
+
+        return reachable;
+    }, [currentNodeId, edgesByFrom]);
 
     if (activeNodeId) {
         return (
@@ -578,6 +654,7 @@ export default function MapView() {
                     enemy={enemy}
                     setEnemy={setEnemy}
                     playerRelics={relics}
+                    enemyRelics={enemyRelics}
                     onPlayerWin={handleCombatWin}
                     onPlayerLose={handleCombatLose}
                 />
@@ -586,8 +663,9 @@ export default function MapView() {
     }
 
     return (
-        <div className="flex flex-col place-content-center place-items-center w-full h-full border gap-y-4 p-3">
-            <div className="w-full flex flex-wrap items-center justify-center gap-3">
+        <div className="w-full min-h-screen overflow-y-auto px-3 py-3">
+            <div className="mx-auto w-full max-w-6xl flex flex-col items-center gap-y-3">
+                <div className="w-full flex flex-wrap items-center justify-center gap-3">
                 <button
                     type="button"
                     onClick={restartMap}
@@ -600,15 +678,15 @@ export default function MapView() {
                 <div className="border px-3 py-1">Gold: {gold}</div>
                 <div className="border px-3 py-1">Relics: {relics.length}</div>
                 {runWon && <div className="border px-3 py-1 bg-green-900/60">Boss defeated</div>}
-            </div>
-
-            {relics.length > 0 && (
-                <div className="w-full max-w-5xl border p-2 text-sm">
-                    <span className="font-bold">Relics:</span> {relics.map((id) => RELIC_DEFS[id].label).join(", ")}
                 </div>
-            )}
 
-            <div className="flex flex-col gap-y-20">
+                {relics.length > 0 && (
+                    <div className="w-full max-w-5xl border p-2 text-sm">
+                        <span className="font-bold">Relics:</span> {relics.map((id) => RELIC_DEFS[id].label).join(", ")}
+                    </div>
+                )}
+
+                <div className="w-full flex flex-col items-center gap-y-6 md:gap-y-10">
                 {pendingOverlay?.kind === "upgrade" && (
                     <div className="fixed inset-0 z-[120] bg-black/75 flex items-center justify-center p-4">
                         <div className="w-full max-w-6xl min-h-[74vh] border-2 border-amber-300/70 bg-[radial-gradient(ellipse_at_top,#2b2012,#1a120b_55%,#120b06)] text-amber-100 p-4 md:p-8 grid grid-rows-[auto_1fr_auto] gap-6 shadow-[0_0_40px_rgba(251,191,36,0.18)]">
@@ -654,115 +732,233 @@ export default function MapView() {
                 )}
 
                 {pendingOverlay?.kind === "relic" && (
-                    <div className="border-2 border-indigo-500 bg-neutral-900/90 p-4 flex flex-col gap-3">
-                        <div className="text-center text-lg text-indigo-300">Choose one relic</div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            {pendingOverlay.options.map((relicId) => (
-                                <button
-                                    key={relicId}
-                                    type="button"
-                                    onClick={() => onSelectRelic(relicId)}
-                                    className="border border-indigo-500 hover:bg-indigo-900/30 px-3 py-3 text-left"
-                                >
-                                    <div className="font-bold text-indigo-300">{RELIC_DEFS[relicId].label}</div>
-                                    <div className="text-sm">{RELIC_DEFS[relicId].description}</div>
-                                </button>
-                            ))}
+                    <div className="fixed inset-0 z-[120] bg-black/75 flex items-center justify-center p-4">
+                        <div className="w-full max-w-6xl min-h-[74vh] border-2 border-violet-300/70 bg-[radial-gradient(ellipse_at_top,#24163f,#151028_56%,#0b0814)] text-violet-100 p-4 md:p-8 grid grid-rows-[auto_1fr_auto] gap-6 shadow-[0_0_40px_rgba(167,139,250,0.2)]">
+                            <pre className="font-mono text-[10px] md:text-xs text-violet-200/90 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|  _____   ______  _      _____   _____    _____   _____   _    _   _____          |
+| |  __ \\ |  ____|| |    |_   _| / ____|  / ____| / ____| | |  | | / ____|         |
+| | |__) || |__   | |      | |  | |      | |     | |  __  | |__| || |              |
+| |  _  / |  __|  | |      | |  | |      | |     | | |_ | |  __  || |              |
+| | | \\ \\ | |____ | |____ _| |_ | |____  | |____ | |__| | | |  | || |____          |
+| |_|  \\_\\|______||______|_____| \\_____|  \\_____| \\_____| |_|  |_| \\_____|         |
+|                                                                                  |
+|                           A R C A N E   R E L I C S                              |
++----------------------------------------------------------------------------------+`}
+                            </pre>
+
+                            <div className="flex flex-col items-center justify-center gap-5">
+                                <div className="text-center text-2xl md:text-4xl tracking-[0.16em] text-violet-200">CHOOSE ONE RELIC</div>
+                                <div className="text-center text-sm md:text-base text-violet-300">
+                                    {pendingOverlay.source === "elite" ? "Elite trophy recovered." : "Event reward discovered."}
+                                </div>
+
+                                <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-5">
+                                    {pendingOverlay.options.map((relicId) => (
+                                        <button
+                                            key={relicId}
+                                            type="button"
+                                            onClick={() => onSelectRelic(relicId)}
+                                            className="min-h-[150px] border border-violet-300/70 bg-black/20 hover:bg-violet-900/25 px-5 py-5 text-left transition-colors"
+                                        >
+                                            <div className="font-bold text-violet-200 text-xl tracking-wide">{RELIC_DEFS[relicId].label}</div>
+                                            <div className="text-sm md:text-base text-violet-100/90 mt-2">{RELIC_DEFS[relicId].description}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <pre className="font-mono text-[10px] md:text-xs text-violet-200/85 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|        "Power kept is weight carried. Choose what burden you can wield."        |
++----------------------------------------------------------------------------------+`}
+                            </pre>
                         </div>
                     </div>
                 )}
 
                 {pendingOverlay?.kind === "rest" && (
-                    <div className="border-2 border-emerald-500 bg-neutral-900/90 p-4 flex flex-col gap-3 max-w-2xl">
-                        <div className="text-center text-lg text-emerald-300">Campfire Rest</div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <button
-                                type="button"
-                                onClick={onRestRecover}
-                                className="border border-emerald-500 hover:bg-emerald-900/30 px-3 py-3 text-left"
-                            >
-                                <div className="font-bold text-emerald-300">Recover</div>
-                                <div className="text-sm">Heal 35% max HP</div>
-                            </button>
-                            <button
-                                type="button"
-                                onClick={onRestTrain}
-                                className="border border-emerald-500 hover:bg-emerald-900/30 px-3 py-3 text-left"
-                            >
-                                <div className="font-bold text-emerald-300">Train</div>
-                                <div className="text-sm">Gain +1 random skill upgrade</div>
-                            </button>
+                    <div className="fixed inset-0 z-[120] bg-black/75 flex items-center justify-center p-4">
+                        <div className="w-full max-w-6xl min-h-[74vh] border-2 border-emerald-300/70 bg-[radial-gradient(ellipse_at_top,#123326,#0d231a_56%,#08140f)] text-emerald-100 p-4 md:p-8 grid grid-rows-[auto_1fr_auto] gap-6 shadow-[0_0_40px_rgba(74,222,128,0.2)]">
+                            <pre className="font-mono text-[10px] md:text-xs text-emerald-200/90 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|   _____     __  __   ____   ______   ______   _____   _____   ______             |
+|  / ____|   / / / /  / __ \\ |  ____| |  ____| |_   _| |  __ \\ |  ____|            |
+| | |       / /_/ /  | |  | || |__    | |__      | |   | |__) || |__               |
+| | |      |  _  |   | |  | ||  __|   |  __|     | |   |  _  / |  __|              |
+| | |____  | | | |   | |__| || |      | |       _| |_  | | \\ \\ | |____             |
+|  \\_____| |_| |_|    \\____/ |_|      |_|      |_____| |_|  \\_\\|______|            |
+|                                                                                  |
+|                             C A M P F I R E   R E S T                            |
++----------------------------------------------------------------------------------+`}
+                            </pre>
+
+                            <div className="flex flex-col items-center justify-center gap-5">
+                                <div className="text-center text-2xl md:text-4xl tracking-[0.16em] text-emerald-200">CHOOSE YOUR REST</div>
+                                <div className="text-center text-sm md:text-base text-emerald-300">
+                                    Restore yourself or refine your combat discipline.
+                                </div>
+
+                                <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <button
+                                        type="button"
+                                        onClick={onRestRecover}
+                                        className="min-h-[150px] border border-emerald-300/70 bg-black/20 hover:bg-emerald-900/25 px-5 py-5 text-left transition-colors"
+                                    >
+                                        <div className="font-bold text-emerald-200 text-xl tracking-wide">Recover</div>
+                                        <div className="text-sm md:text-base text-emerald-100/90 mt-2">Heal 35% of max HP.</div>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={onRestTrain}
+                                        className="min-h-[150px] border border-emerald-300/70 bg-black/20 hover:bg-emerald-900/25 px-5 py-5 text-left transition-colors"
+                                    >
+                                        <div className="font-bold text-emerald-200 text-xl tracking-wide">Train</div>
+                                        <div className="text-sm md:text-base text-emerald-100/90 mt-2">Gain +1 random skill upgrade.</div>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <pre className="font-mono text-[10px] md:text-xs text-emerald-200/85 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|         "Flame mends steel, but only intent decides what it becomes."           |
++----------------------------------------------------------------------------------+`}
+                            </pre>
                         </div>
                     </div>
                 )}
 
                 {pendingOverlay?.kind === "shop" && (
-                    <div className="border-2 border-cyan-500 bg-neutral-900/90 p-4 flex flex-col gap-3 max-w-5xl">
-                        <div className="text-center text-lg text-cyan-300">Shop</div>
-                        <div className="text-center text-sm">Gold: {gold}</div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            {pendingOverlay.offers.map((offer) => {
-                                const affordable = gold >= offer.cost;
-                                return (
+                    <div className="fixed inset-0 z-[120] bg-black/75 flex items-center justify-center p-4">
+                        <div className="w-full max-w-6xl min-h-[74vh] border-2 border-cyan-300/70 bg-[radial-gradient(ellipse_at_top,#10223a,#0a1424_56%,#060b13)] text-cyan-100 p-4 md:p-8 grid grid-rows-[auto_1fr_auto] gap-6 shadow-[0_0_40px_rgba(34,211,238,0.2)]">
+                            <pre className="font-mono text-[10px] md:text-xs text-cyan-200/90 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|   __  __  ______  _____   _____  _    _          _   _  _______                  |
+|  |  \\/  ||  ____||  __ \\ / ____|| |  | |   /\\   | \\ | ||__   __|                 |
+|  | \\  / || |__   | |__) | |     | |__| |  /  \\  |  \\| |   | |                    |
+|  | |\\/| ||  __|  |  _  /| |     |  __  | / /\\ \\ | . \` |   | |                    |
+|  | |  | || |____ | | \\ \\| |____ | |  | |/ ____ \\| |\\  |   | |                    |
+|  |_|  |_||______||_|  \\_\\\\_____||_|  |_/_/    \\_\\_| \\_|   |_|                    |
+|                                                                                  |
+|                           T R A V E L E R ' S   S H O P                          |
++----------------------------------------------------------------------------------+`}
+                            </pre>
+
+                            <div className="flex flex-col items-center justify-center gap-5">
+                                <div className="text-center text-2xl md:text-4xl tracking-[0.16em] text-cyan-200">SELECT AN OFFER</div>
+                                <div className="text-center text-sm md:text-base text-cyan-300">Gold: {gold} | Reroll cost: 15</div>
+
+                                <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-5">
+                                    {pendingOverlay.offers.length > 0 ? pendingOverlay.offers.map((offer) => {
+                                        const affordable = gold >= offer.cost;
+                                        return (
+                                            <button
+                                                key={offer.id}
+                                                type="button"
+                                                onClick={() => onShopBuy(offer)}
+                                                disabled={!affordable}
+                                                className={`min-h-[150px] border px-5 py-5 text-left transition-colors ${
+                                                    affordable
+                                                        ? "border-cyan-300/70 bg-black/20 hover:bg-cyan-900/25"
+                                                        : "border-neutral-700/80 bg-black/10 opacity-55 cursor-not-allowed"
+                                                }`}
+                                            >
+                                                <div className="font-bold text-cyan-200 text-xl tracking-wide">{offer.label}</div>
+                                                <div className="text-sm md:text-base text-cyan-100/90 mt-2">{offer.description}</div>
+                                                <div className="text-xs md:text-sm text-cyan-300/90 mt-4">Cost: {offer.cost}g</div>
+                                            </button>
+                                        );
+                                    }) : (
+                                        <div className="md:col-span-3 border border-cyan-300/40 bg-black/20 px-5 py-8 text-center text-cyan-200/80">
+                                            No offers left. You can reroll or leave.
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="flex gap-3 justify-center">
                                     <button
-                                        key={offer.id}
                                         type="button"
-                                        onClick={() => onShopBuy(offer)}
-                                        disabled={!affordable}
-                                        className={`border px-3 py-3 text-left ${
-                                            affordable
-                                                ? "border-cyan-500 hover:bg-cyan-900/30"
-                                                : "border-neutral-700 opacity-60 cursor-not-allowed"
+                                        onClick={onShopReroll}
+                                        disabled={gold < 15}
+                                        className={`border px-4 py-2 ${
+                                            gold >= 15
+                                                ? "border-cyan-300/70 hover:bg-cyan-900/25"
+                                                : "border-neutral-700/80 opacity-55 cursor-not-allowed"
                                         }`}
                                     >
-                                        <div className="font-bold text-cyan-300">{offer.label}</div>
-                                        <div className="text-sm">{offer.description}</div>
-                                        <div className="text-xs mt-2">Cost: {offer.cost}g</div>
+                                        Reroll (15g)
                                     </button>
-                                );
-                            })}
-                        </div>
-                        <div className="flex gap-3 justify-center">
-                            <button
-                                type="button"
-                                onClick={onShopReroll}
-                                disabled={gold < 15}
-                                className={`border px-3 py-2 ${gold >= 15 ? "border-cyan-500 hover:bg-cyan-900/30" : "opacity-60 cursor-not-allowed"}`}
-                            >
-                                Reroll (15g)
-                            </button>
-                            <button
-                                type="button"
-                                onClick={onShopLeave}
-                                className="border border-cyan-500 px-3 py-2 hover:bg-cyan-900/30"
-                            >
-                                Leave Shop
-                            </button>
+                                    <button
+                                        type="button"
+                                        onClick={onShopLeave}
+                                        className="border border-cyan-300/70 px-4 py-2 hover:bg-cyan-900/25"
+                                    >
+                                        Leave Shop
+                                    </button>
+                                </div>
+                            </div>
+
+                            <pre className="font-mono text-[10px] md:text-xs text-cyan-200/85 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|  "Coin opens doors, but only judgment keeps them from closing behind you."      |
++----------------------------------------------------------------------------------+`}
+                            </pre>
                         </div>
                     </div>
                 )}
 
                 {pendingOverlay?.kind === "event" && (
-                    <div className="border-2 border-fuchsia-500 bg-neutral-900/90 p-4 flex flex-col gap-3 max-w-4xl">
-                        <div className="text-center text-lg text-fuchsia-300">{pendingOverlay.event.title}</div>
-                        <div className="text-center text-sm">{pendingOverlay.event.description}</div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            {pendingOverlay.event.options.map((option) => (
-                                <button
-                                    key={option.id}
-                                    type="button"
-                                    onClick={() => onEventOption(option.id)}
-                                    className="border border-fuchsia-500 hover:bg-fuchsia-900/30 px-3 py-3 text-left"
-                                >
-                                    <div className="font-bold text-fuchsia-300">{option.label}</div>
-                                    <div className="text-sm">{option.description}</div>
-                                </button>
-                            ))}
+                    <div className="fixed inset-0 z-[120] bg-black/75 flex items-center justify-center p-4">
+                        <div className="w-full max-w-6xl min-h-[74vh] border-2 border-fuchsia-300/70 bg-[radial-gradient(ellipse_at_top,#2d1135,#1a0b21_58%,#0f0713)] text-fuchsia-100 p-4 md:p-8 grid grid-rows-[auto_1fr_auto] gap-6 shadow-[0_0_40px_rgba(232,121,249,0.2)]">
+                            <pre className="font-mono text-[10px] md:text-xs text-fuchsia-200/90 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|  ________ __     __ _______  _   _  _______    _______   _   _  _______          |
+| |  ____/|  \\   / /|  ____|| \\ | ||__   __|  |  ____| | \\ | ||__   __|         |
+| | |__   | \\ \\_/ / | |__   |  \\| |   | |     | |__    |  \\| |   | |            |
+| |  __|  | |\\   /  |  __|  | . \` |   | |     |  __|   | . \` |   | |            |
+| | |____ | | | |   | |____ | |\\  |   | |     | |____  | |\\  |   | |            |
+| |______||_| |_|   |______||_| \\_|   |_|     |______| |_| \\_|   |_|            |
+|                                                                                  |
+|                           R U N E - M A R K E D   E V E N T                      |
++----------------------------------------------------------------------------------+`}
+                            </pre>
+
+                            <div className="flex flex-col items-center justify-center gap-5">
+                                <div className="text-center text-2xl md:text-4xl tracking-[0.12em] text-fuchsia-200">
+                                    {pendingOverlay.event.title.toUpperCase()}
+                                </div>
+                                <div className="text-center text-sm md:text-base text-fuchsia-100/90 max-w-3xl">
+                                    {pendingOverlay.event.description}
+                                </div>
+
+                                <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-5">
+                                    {pendingOverlay.event.options.map((option) => (
+                                        <button
+                                            key={option.id}
+                                            type="button"
+                                            onClick={() => onEventOption(option.id)}
+                                            className="min-h-[150px] border border-fuchsia-300/70 bg-black/20 hover:bg-fuchsia-900/25 px-5 py-5 text-left transition-colors"
+                                        >
+                                            <div className="font-bold text-fuchsia-200 text-xl tracking-wide">{option.label}</div>
+                                            <div className="text-sm md:text-base text-fuchsia-100/90 mt-2">{option.description}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <pre className="font-mono text-[10px] md:text-xs text-fuchsia-200/85 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|     "Every choice writes on steel. Pick wisely and endure the consequence."     |
++----------------------------------------------------------------------------------+`}
+                            </pre>
                         </div>
                     </div>
                 )}
 
-                <div ref={graphRef} className="relative w-[95vw] max-w-6xl min-h-[560px] border rounded-md bg-neutral-950/30 overflow-hidden">
+                <div
+                    ref={graphRef}
+                    className="relative w-full max-w-6xl h-[clamp(460px,76vh,760px)] bg-neutral-950/30 overflow-hidden"
+                >
                     <svg ref={linesSvgRef} className="absolute inset-0 w-full h-full pointer-events-none">
                         {edges.map((edge) => {
                             const from = nodePositions[edge.from];
@@ -771,6 +967,48 @@ export default function MapView() {
 
                             const isPathFromCurrent = edge.from === currentNodeId;
                             const isCompletedPath = completedNodeIds.has(edge.from) && completedNodeIds.has(edge.to);
+                            const isReachableFuture = reachableNodeIds.has(edge.from) && reachableNodeIds.has(edge.to);
+                            const isDiscardedPath =
+                                edge.from !== currentNodeId &&
+                                completedNodeIds.has(edge.from) &&
+                                !completedNodeIds.has(edge.to) &&
+                                !isReachableFuture;
+                            const isUnavailablePath = !isCompletedPath && !isReachableFuture;
+
+                            const stroke = isCompletedPath
+                                ? "#34d399"
+                                : isPathFromCurrent
+                                    ? "#facc15"
+                                    : isDiscardedPath
+                                        ? "#64748b"
+                                        : isUnavailablePath
+                                            ? "#64748b"
+                                            : "#cbd5e1";
+                            const strokeWidth = isCompletedPath
+                                ? 1.1
+                                : isPathFromCurrent
+                                    ? 1.35
+                                    : isDiscardedPath
+                                        ? 0.62
+                                        : isUnavailablePath
+                                            ? 0.90
+                                            : 0.75;
+                            const strokeOpacity = isCompletedPath
+                                ? 0.98
+                                : isPathFromCurrent
+                                    ? 1
+                                    : isDiscardedPath
+                                        ? 0.80
+                                        : isUnavailablePath
+                                            ? 0.80
+                                            : 0.80;
+                            const strokeDasharray = isCompletedPath || isPathFromCurrent
+                                ? undefined
+                                : isDiscardedPath
+                                    ? "1.2 2.5"
+                                    : isUnavailablePath
+                                        ? "0.9 3.6"
+                                        : "1.1 2.1";
 
                             return (
                                 <line
@@ -779,15 +1017,17 @@ export default function MapView() {
                                     y1={from.y}
                                     x2={to.x}
                                     y2={to.y}
-                                    stroke={isCompletedPath ? "#34d399" : isPathFromCurrent ? "#facc15" : "#6b7280"}
-                                    strokeWidth={isPathFromCurrent ? 0.65 : 0.45}
-                                    strokeOpacity={isPathFromCurrent ? 0.9 : 0.55}
+                                    stroke={stroke}
+                                    strokeWidth={strokeWidth}
+                                    strokeOpacity={strokeOpacity}
+                                    strokeDasharray={strokeDasharray}
+                                    strokeLinecap="round"
                                 />
                             );
                         })}
                     </svg>
 
-                    <div className="relative z-10 flex flex-col gap-y-20 py-6">
+                    <div className="relative z-10 h-full flex flex-col justify-between py-2 sm:py-4">
                         {rows.map((rowNodes, index) => (
                             <MapRow
                                 key={index}
@@ -795,6 +1035,7 @@ export default function MapView() {
                                 currentNodeId={currentNodeId}
                                 activeNodeId={activeNodeId}
                                 completedNodeIds={completedNodeIds}
+                                reachableNodeIds={reachableNodeIds}
                                 isLocked={runWon}
                                 canSelectNode={canSelectNode}
                                 onSelectNode={onSelectNode}
@@ -803,7 +1044,7 @@ export default function MapView() {
                         <div className="place-self-center">
                             <div
                                 data-map-node-id="start"
-                                className={`border rounded px-2 py-1 font-bold ${currentNodeId === "start" ? "bg-emerald-900/70" : ""}`}
+                                className={`rounded px-2 py-1 font-bold ${currentNodeId === "start" ? "bg-emerald-900/70" : ""}`}
                             >
                                 START
                             </div>
@@ -811,6 +1052,7 @@ export default function MapView() {
                     </div>
                 </div>
             </div>
+        </div>
         </div>
     );
 }
