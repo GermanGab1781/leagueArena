@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Combat from "../Combat/combat";
 import { createChampion, scaleChampion } from "@/lib/champions";
 import MapRow from "./row";
+import IconSlot from "../UI/iconSlot";
 import { prepareChampionForNextEncounter } from "@/lib/utils/combat";
 import { applyDirectSkillUpgrade, applyUpgradeOption, generateUpgradeOptions, type UpgradeOption } from "@/lib/utils/upgrades";
 import { applyAffixesOnSpawn, rollEnemyAffixes } from "@/lib/utils/affixes";
@@ -40,6 +41,86 @@ const PLAYER_CHAMPION: ChampionId = "garen";
 const ENEMY_POOL: ChampionId[] = ["darius", "garen"];
 const SKILL_UPGRADE_KEYS: SkillUpgradeKey[] = ["Q", "W", "E", "R"];
 const ALL_RELIC_IDS = Object.keys(RELIC_DEFS) as RelicId[];
+const MAP_HUD_ICON_SRCS = {
+    restart: "/icons/map/hud_restart.png",
+    currentNode: "/icons/map/hud_current_node.png",
+    health: "/icons/map/hud_health.png",
+    gold: "/icons/map/hud_gold.png",
+    relicCount: "/icons/map/hud_relic_count.png",
+    bossDefeated: "/icons/map/hud_boss_defeated.png",
+};
+const RELIC_ICON_CODES: Record<RelicId, string> = {
+    giants_blood: "GB",
+    vanguard_plate: "VP",
+    steadfast_idol: "SI",
+    war_banner: "WB",
+    sharpening_stone: "SS",
+    runic_lens: "RL",
+    spirit_totem: "ST",
+    first_blood_sigil: "FS",
+};
+const EVENT_OPTION_ICON_CODES: Record<string, string> = {
+    "event-shrine-gold": "GD",
+    "event-shrine-heal": "HP",
+    "event-shrine-relic": "RL",
+    "event-drill-skill": "SK",
+    "event-drill-defense": "DF",
+    "event-drill-gold-hp": "TR",
+    "event-cache-gold-hp": "TR",
+    "event-cache-relic": "RL",
+    "event-cache-heal": "HP",
+};
+const EVENT_OPTION_ICON_SRCS: Record<string, string> = {
+    "event-shrine-gold": "/icons/map/event_gold.png",
+    "event-shrine-heal": "/icons/map/event_heal.png",
+    "event-shrine-relic": "/icons/map/event_relic.png",
+    "event-drill-skill": "/icons/map/event_skill.png",
+    "event-drill-defense": "/icons/map/event_defense.png",
+    "event-drill-gold-hp": "/icons/map/event_tradeoff.png",
+    "event-cache-gold-hp": "/icons/map/event_tradeoff.png",
+    "event-cache-relic": "/icons/map/event_relic.png",
+    "event-cache-heal": "/icons/map/event_heal.png",
+};
+
+const getUpgradeIconCode = (option: UpgradeOption): string => {
+    if (option.kind === "skill") return option.skill;
+    if (option.stat === "maxHealth") return "HP";
+    if (option.stat === "armor") return "AR";
+    return "TN";
+};
+
+const getUpgradeIconSrc = (option: UpgradeOption): string => {
+    if (option.kind === "skill") return `/icons/map/upgrade_${option.skill.toLowerCase()}.png`;
+    if (option.stat === "maxHealth") return "/icons/map/upgrade_health.png";
+    if (option.stat === "armor") return "/icons/map/upgrade_armor.png";
+    return "/icons/map/upgrade_tenacity.png";
+};
+
+const getRelicIconSrc = (relicId: RelicId): string => {
+    return `/icons/relics/relic_${relicId}.png`;
+};
+
+const getShopOfferIconCode = (offer: ShopOffer): string => {
+    if (offer.kind === "heal") return "HP";
+    if (offer.kind === "stat") return offer.stat === "armor" ? "AR" : "TN";
+    if (offer.kind === "skill") return offer.skill;
+    return RELIC_ICON_CODES[offer.relicId] ?? "RL";
+};
+
+const getShopOfferIconSrc = (offer: ShopOffer): string => {
+    if (offer.kind === "heal") return "/icons/map/upgrade_health.png";
+    if (offer.kind === "stat") return offer.stat === "armor" ? "/icons/map/upgrade_armor.png" : "/icons/map/upgrade_tenacity.png";
+    if (offer.kind === "skill") return `/icons/map/upgrade_${offer.skill.toLowerCase()}.png`;
+    return getRelicIconSrc(offer.relicId);
+};
+
+const getEventOptionIconCode = (optionId: string): string => {
+    return EVENT_OPTION_ICON_CODES[optionId] ?? "EV";
+};
+
+const getEventOptionIconSrc = (optionId: string): string | undefined => {
+    return EVENT_OPTION_ICON_SRCS[optionId];
+};
 
 const createRng = (seed: number) => {
     let t = seed >>> 0;
@@ -663,26 +744,110 @@ export default function MapView() {
     }
 
     return (
-        <div className="w-full min-h-screen overflow-y-auto px-3 py-3">
+        <div
+            className="w-full min-h-screen overflow-y-auto px-3 py-3 bg-cover bg-center bg-no-repeat"
+            style={{
+                backgroundImage: " url('/images/MapBackground.png')",
+            }}
+        >
             <div className="mx-auto w-full max-w-6xl flex flex-col items-center gap-y-3">
                 <div className="w-full flex flex-wrap items-center justify-center gap-3">
-                <button
-                    type="button"
-                    onClick={restartMap}
-                    className="border px-3 py-1 bg-neutral-900 hover:bg-neutral-800"
-                >
-                    Restart Map
-                </button>
-                <div className="border px-3 py-1">Current Node: {currentLabel}</div>
-                <div className="border px-3 py-1">HP: {player.currentHealth}/{player.maxHealth}</div>
-                <div className="border px-3 py-1">Gold: {gold}</div>
-                <div className="border px-3 py-1">Relics: {relics.length}</div>
-                {runWon && <div className="border px-3 py-1 bg-green-900/60">Boss defeated</div>}
+                    <button
+                        type="button"
+                        onClick={restartMap}
+                        className="px-3 py-1.5 rounded-md bg-black/50 hover:bg-black/60 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]"
+                    >
+                        <IconSlot
+                            code="RS"
+                            label="restart map"
+                            src={MAP_HUD_ICON_SRCS.restart}
+                            className="h-5 w-5 text-[8px] border-neutral-300/70 text-neutral-200"
+                            imageClassName="p-[1px]"
+                        />
+                        <span>Restart Map</span>
+                    </button>
+                    <div className="px-3 py-1.5 rounded-md bg-black/50 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
+                        <IconSlot
+                            code="ND"
+                            label="current node"
+                            src={MAP_HUD_ICON_SRCS.currentNode}
+                            className="h-5 w-5 text-[8px] border-slate-300/70 text-slate-200"
+                            imageClassName="p-[1px]"
+                        />
+                        <span>Current Node: {currentLabel}</span>
+                    </div>
+                    <div className="px-3 py-1.5 rounded-md bg-black/50 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
+                        <IconSlot
+                            code="HP"
+                            label="player health"
+                            src={MAP_HUD_ICON_SRCS.health}
+                            className="h-5 w-5 text-[8px] border-rose-300/70 text-rose-200"
+                            imageClassName="p-[1px]"
+                        />
+                        <span>HP: {player.currentHealth}/{player.maxHealth}</span>
+                    </div>
+                    <div className="px-3 py-1.5 rounded-md bg-black/50 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
+                        <IconSlot
+                            code="GD"
+                            label="player gold"
+                            src={MAP_HUD_ICON_SRCS.gold}
+                            className="h-5 w-5 text-[8px] border-amber-300/70 text-amber-200"
+                            imageClassName="p-[1px]"
+                        />
+                        <span>Gold: {gold}</span>
+                    </div>
+                    <div className="px-3 py-1.5 rounded-md bg-black/50 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
+                        <IconSlot
+                            code="RL"
+                            label="relic count"
+                            src={MAP_HUD_ICON_SRCS.relicCount}
+                            className="h-5 w-5 text-[8px] border-violet-300/70 text-violet-200"
+                            imageClassName="p-[1px]"
+                        />
+                        <span>Relics: {relics.length}</span>
+                    </div>
+                    {runWon && (
+                        <div className="px-3 py-1.5 rounded-md bg-emerald-950/55 text-emerald-100 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
+                            <IconSlot
+                                code="WN"
+                                label="boss defeated"
+                                src={MAP_HUD_ICON_SRCS.bossDefeated}
+                                className="h-5 w-5 text-[8px] border-emerald-300/70 text-emerald-200"
+                                imageClassName="p-[1px]"
+                            />
+                            <span>Boss defeated</span>
+                        </div>
+                    )}
                 </div>
 
                 {relics.length > 0 && (
-                    <div className="w-full max-w-5xl border p-2 text-sm">
-                        <span className="font-bold">Relics:</span> {relics.map((id) => RELIC_DEFS[id].label).join(", ")}
+                    <div className="w-full max-w-5xl rounded-lg bg-black/45 backdrop-blur-sm px-3 py-3 shadow-[0_10px_28px_rgba(0,0,0,0.36)]">
+                        <div className="flex items-center gap-3">
+                            <div className="h-px flex-1 bg-violet-300/35" />
+                            <div className="text-[11px] sm:text-xs font-semibold tracking-[0.28em] uppercase text-violet-200">
+                                Relic Arsenal
+                            </div>
+                            <div className="h-px flex-1 bg-violet-300/35" />
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                            {relics.map((relicId) => (
+                                <div
+                                    key={relicId}
+                                    className="inline-flex items-center gap-2 rounded-md bg-violet-950/35 px-2.5 py-1.5"
+                                >
+                                    <IconSlot
+                                        code={RELIC_ICON_CODES[relicId] ?? "RL"}
+                                        label={`${RELIC_DEFS[relicId].label} owned`}
+                                        src={getRelicIconSrc(relicId)}
+                                        className="h-5 w-5 border-violet-300/70 text-violet-200"
+                                        imageClassName="p-[1px]"
+                                    />
+                                    <span className="text-xs sm:text-sm text-violet-100">
+                                        {RELIC_DEFS[relicId].label}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
 
@@ -715,8 +880,18 @@ export default function MapView() {
                                             onClick={() => onSelectUpgrade(option)}
                                             className="min-h-[150px] border border-amber-300/70 bg-black/20 hover:bg-amber-900/25 px-5 py-5 text-left transition-colors"
                                         >
-                                            <div className="font-bold text-amber-200 text-xl tracking-wide">{option.label}</div>
-                                            <div className="text-sm md:text-base text-amber-100/90 mt-2">{option.description}</div>
+                                            <div className="flex items-start gap-3">
+                                                <IconSlot
+                                                    code={getUpgradeIconCode(option)}
+                                                    label={`${option.label} option`}
+                                                    src={getUpgradeIconSrc(option)}
+                                                    className="border-amber-300/80 text-amber-200"
+                                                />
+                                                <div className="min-w-0">
+                                                    <div className="font-bold text-amber-200 text-xl tracking-wide">{option.label}</div>
+                                                    <div className="text-sm md:text-base text-amber-100/90 mt-2">{option.description}</div>
+                                                </div>
+                                            </div>
                                         </button>
                                     ))}
                                 </div>
@@ -761,8 +936,18 @@ export default function MapView() {
                                             onClick={() => onSelectRelic(relicId)}
                                             className="min-h-[150px] border border-violet-300/70 bg-black/20 hover:bg-violet-900/25 px-5 py-5 text-left transition-colors"
                                         >
-                                            <div className="font-bold text-violet-200 text-xl tracking-wide">{RELIC_DEFS[relicId].label}</div>
-                                            <div className="text-sm md:text-base text-violet-100/90 mt-2">{RELIC_DEFS[relicId].description}</div>
+                                            <div className="flex items-start gap-3">
+                                                <IconSlot
+                                                    code={RELIC_ICON_CODES[relicId] ?? "RL"}
+                                                    label={`${RELIC_DEFS[relicId].label} relic`}
+                                                    src={getRelicIconSrc(relicId)}
+                                                    className="border-violet-300/80 text-violet-200"
+                                                />
+                                                <div className="min-w-0">
+                                                    <div className="font-bold text-violet-200 text-xl tracking-wide">{RELIC_DEFS[relicId].label}</div>
+                                                    <div className="text-sm md:text-base text-violet-100/90 mt-2">{RELIC_DEFS[relicId].description}</div>
+                                                </div>
+                                            </div>
                                         </button>
                                     ))}
                                 </div>
@@ -805,16 +990,36 @@ export default function MapView() {
                                         onClick={onRestRecover}
                                         className="min-h-[150px] border border-emerald-300/70 bg-black/20 hover:bg-emerald-900/25 px-5 py-5 text-left transition-colors"
                                     >
-                                        <div className="font-bold text-emerald-200 text-xl tracking-wide">Recover</div>
-                                        <div className="text-sm md:text-base text-emerald-100/90 mt-2">Heal 35% of max HP.</div>
+                                        <div className="flex items-start gap-3">
+                                            <IconSlot
+                                                code="HP"
+                                                label="recover option"
+                                                src="/icons/map/rest_recover.png"
+                                                className="border-emerald-300/80 text-emerald-200"
+                                            />
+                                            <div className="min-w-0">
+                                                <div className="font-bold text-emerald-200 text-xl tracking-wide">Recover</div>
+                                                <div className="text-sm md:text-base text-emerald-100/90 mt-2">Heal 35% of max HP.</div>
+                                            </div>
+                                        </div>
                                     </button>
                                     <button
                                         type="button"
                                         onClick={onRestTrain}
                                         className="min-h-[150px] border border-emerald-300/70 bg-black/20 hover:bg-emerald-900/25 px-5 py-5 text-left transition-colors"
                                     >
-                                        <div className="font-bold text-emerald-200 text-xl tracking-wide">Train</div>
-                                        <div className="text-sm md:text-base text-emerald-100/90 mt-2">Gain +1 random skill upgrade.</div>
+                                        <div className="flex items-start gap-3">
+                                            <IconSlot
+                                                code="SK"
+                                                label="train option"
+                                                src="/icons/map/rest_train.png"
+                                                className="border-emerald-300/80 text-emerald-200"
+                                            />
+                                            <div className="min-w-0">
+                                                <div className="font-bold text-emerald-200 text-xl tracking-wide">Train</div>
+                                                <div className="text-sm md:text-base text-emerald-100/90 mt-2">Gain +1 random skill upgrade.</div>
+                                            </div>
+                                        </div>
                                     </button>
                                 </div>
                             </div>
@@ -863,9 +1068,19 @@ export default function MapView() {
                                                         : "border-neutral-700/80 bg-black/10 opacity-55 cursor-not-allowed"
                                                 }`}
                                             >
-                                                <div className="font-bold text-cyan-200 text-xl tracking-wide">{offer.label}</div>
-                                                <div className="text-sm md:text-base text-cyan-100/90 mt-2">{offer.description}</div>
-                                                <div className="text-xs md:text-sm text-cyan-300/90 mt-4">Cost: {offer.cost}g</div>
+                                                <div className="flex items-start gap-3">
+                                                    <IconSlot
+                                                        code={getShopOfferIconCode(offer)}
+                                                        label={`${offer.label} offer`}
+                                                        src={getShopOfferIconSrc(offer)}
+                                                        className={affordable ? "border-cyan-300/80 text-cyan-200" : "border-neutral-500/70 text-neutral-400"}
+                                                    />
+                                                    <div className="min-w-0">
+                                                        <div className="font-bold text-cyan-200 text-xl tracking-wide">{offer.label}</div>
+                                                        <div className="text-sm md:text-base text-cyan-100/90 mt-2">{offer.description}</div>
+                                                        <div className="text-xs md:text-sm text-cyan-300/90 mt-4">Cost: {offer.cost}g</div>
+                                                    </div>
+                                                </div>
                                             </button>
                                         );
                                     }) : (
@@ -880,20 +1095,34 @@ export default function MapView() {
                                         type="button"
                                         onClick={onShopReroll}
                                         disabled={gold < 15}
-                                        className={`border px-4 py-2 ${
+                                        className={`border px-4 py-2 inline-flex items-center gap-2 ${
                                             gold >= 15
                                                 ? "border-cyan-300/70 hover:bg-cyan-900/25"
                                                 : "border-neutral-700/80 opacity-55 cursor-not-allowed"
                                         }`}
                                     >
-                                        Reroll (15g)
+                                        <IconSlot
+                                            code="RR"
+                                            label="reroll shop"
+                                            src="/icons/map/shop_reroll.png"
+                                            className={`h-5 w-5 text-[8px] ${gold >= 15 ? "border-cyan-300/80 text-cyan-200" : "border-neutral-500/70 text-neutral-400"}`}
+                                            imageClassName="p-[1px]"
+                                        />
+                                        <span>Reroll (15g)</span>
                                     </button>
                                     <button
                                         type="button"
                                         onClick={onShopLeave}
-                                        className="border border-cyan-300/70 px-4 py-2 hover:bg-cyan-900/25"
+                                        className="border border-cyan-300/70 px-4 py-2 hover:bg-cyan-900/25 inline-flex items-center gap-2"
                                     >
-                                        Leave Shop
+                                        <IconSlot
+                                            code="LV"
+                                            label="leave shop"
+                                            src="/icons/map/shop_leave.png"
+                                            className="h-5 w-5 text-[8px] border-cyan-300/80 text-cyan-200"
+                                            imageClassName="p-[1px]"
+                                        />
+                                        <span>Leave Shop</span>
                                     </button>
                                 </div>
                             </div>
@@ -939,8 +1168,18 @@ export default function MapView() {
                                             onClick={() => onEventOption(option.id)}
                                             className="min-h-[150px] border border-fuchsia-300/70 bg-black/20 hover:bg-fuchsia-900/25 px-5 py-5 text-left transition-colors"
                                         >
-                                            <div className="font-bold text-fuchsia-200 text-xl tracking-wide">{option.label}</div>
-                                            <div className="text-sm md:text-base text-fuchsia-100/90 mt-2">{option.description}</div>
+                                            <div className="flex items-start gap-3">
+                                                <IconSlot
+                                                    code={getEventOptionIconCode(option.id)}
+                                                    label={`${option.label} event option`}
+                                                    src={getEventOptionIconSrc(option.id)}
+                                                    className="border-fuchsia-300/80 text-fuchsia-200"
+                                                />
+                                                <div className="min-w-0">
+                                                    <div className="font-bold text-fuchsia-200 text-xl tracking-wide">{option.label}</div>
+                                                    <div className="text-sm md:text-base text-fuchsia-100/90 mt-2">{option.description}</div>
+                                                </div>
+                                            </div>
                                         </button>
                                     ))}
                                 </div>
@@ -957,7 +1196,7 @@ export default function MapView() {
 
                 <div
                     ref={graphRef}
-                    className="relative w-full max-w-6xl h-[clamp(460px,76vh,760px)] bg-neutral-950/30 overflow-hidden"
+                    className="relative w-full max-w-6xl h-[clamp(500px,calc(100vh-170px),760px)] bg-neutral-950/30 overflow-hidden"
                 >
                     <svg ref={linesSvgRef} className="absolute inset-0 w-full h-full pointer-events-none">
                         {edges.map((edge) => {
@@ -1027,7 +1266,7 @@ export default function MapView() {
                         })}
                     </svg>
 
-                    <div className="relative z-10 h-full flex flex-col justify-between py-2 sm:py-4">
+                    <div className="relative z-10 h-full flex flex-col justify-between py-1 sm:py-2">
                         {rows.map((rowNodes, index) => (
                             <MapRow
                                 key={index}
@@ -1044,9 +1283,22 @@ export default function MapView() {
                         <div className="place-self-center">
                             <div
                                 data-map-node-id="start"
-                                className={`rounded px-2 py-1 font-bold ${currentNodeId === "start" ? "bg-emerald-900/70" : ""}`}
+                                className={`rounded-md border min-w-[86px] px-2 py-2.5 flex flex-col items-center gap-y-1 ${
+                                    currentNodeId === "start"
+                                        ? "bg-emerald-900/70 border-emerald-400/80 text-emerald-100"
+                                        : "border-slate-300/70 text-slate-100"
+                                }`}
                             >
-                                START
+                                <IconSlot
+                                    code="ST"
+                                    label="start node"
+                                    src="/icons/map/map_node_start.png"
+                                    className={currentNodeId === "start" ? "h-10 w-10 border-emerald-300/90 text-emerald-100" : "h-10 w-10 border-slate-200/80 text-slate-100"}
+                                />
+                                <div className="text-[10px] font-bold tracking-[0.14em] uppercase leading-none">Start</div>
+                                <div className="text-[9px] tracking-[0.12em] uppercase opacity-85 leading-none">
+                                    {currentNodeId === "start" ? "Current" : "Origin"}
+                                </div>
                             </div>
                         </div>
                     </div>

@@ -30,7 +30,7 @@ export default function MapRow({
 }: MapRowProps) {
     return (
         <div>
-            <div className="flex flex-row gap-x-8 sm:gap-x-12 md:gap-x-16 lg:gap-x-20 place-content-center py-2 px-2 sm:px-4">
+            <div className="flex flex-row gap-x-8 sm:gap-x-12 md:gap-x-16 lg:gap-x-20 place-content-center py-1 sm:py-1.5 px-2 sm:px-4">
                 {nodes.map((node) => (
                     <MapNode
                         key={node.id}

@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import IconSlot from "../UI/iconSlot";
 
 type AudioSettingsContextValue = {
     musicVolume: number;
@@ -82,28 +83,60 @@ export function AudioSettingsProvider({ children }: { children: React.ReactNode 
             <button
                 type="button"
                 onClick={() => setIsOpen(true)}
-                className="fixed top-3 right-3 z-[100] border px-3 py-1 bg-neutral-900/90 hover:bg-neutral-800"
+                className="fixed top-3 right-3 z-[100] px-3 py-1.5 rounded-md bg-black/55 hover:bg-black/65 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]"
             >
-                Settings
+                <IconSlot
+                    code="ST"
+                    label="settings panel"
+                    src="/icons/settings/settings_panel.png"
+                    className="h-5 w-5 text-[8px] border-slate-300/70 text-slate-200"
+                    imageClassName="p-[1px]"
+                />
+                <span>Settings</span>
             </button>
 
             {isOpen && (
                 <div className="fixed inset-0 z-[110] bg-black/70 flex items-center justify-center p-4">
                     <div className="w-full max-w-md border bg-neutral-900 p-4">
                         <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-lg font-bold">Audio Settings</h2>
+                            <h2 className="text-lg font-bold inline-flex items-center gap-2">
+                                <IconSlot
+                                    code="ST"
+                                    label="audio settings"
+                                    src="/icons/settings/settings_panel.png"
+                                    className="h-6 w-6 text-[9px] border-slate-300/70 text-slate-200"
+                                    imageClassName="p-[1px]"
+                                />
+                                <span>Audio Settings</span>
+                            </h2>
                             <button
                                 type="button"
                                 onClick={() => setIsOpen(false)}
-                                className="border px-2 py-1 hover:bg-neutral-800"
+                                className="border px-2 py-1 hover:bg-neutral-800 inline-flex items-center gap-2"
                             >
-                                Close
+                                <IconSlot
+                                    code="CL"
+                                    label="close settings"
+                                    src="/icons/settings/settings_close.png"
+                                    className="h-5 w-5 text-[8px] border-slate-300/70 text-slate-200"
+                                    imageClassName="p-[1px]"
+                                />
+                                <span>Close</span>
                             </button>
                         </div>
 
                         <div className="space-y-4">
                             <label className="block">
-                                <div className="mb-1">MUSIC: {Math.round(musicVolume * 100)}%</div>
+                                <div className="mb-1 inline-flex items-center gap-2">
+                                    <IconSlot
+                                        code="MU"
+                                        label="music volume"
+                                        src="/icons/settings/settings_music.png"
+                                        className="h-5 w-5 text-[8px] border-slate-300/70 text-slate-200"
+                                        imageClassName="p-[1px]"
+                                    />
+                                    <span>MUSIC: {Math.round(musicVolume * 100)}%</span>
+                                </div>
                                 <input
                                     type="range"
                                     min={0}
@@ -115,7 +148,16 @@ export function AudioSettingsProvider({ children }: { children: React.ReactNode 
                             </label>
 
                             <label className="block">
-                                <div className="mb-1">SFX: {Math.round(sfxVolume * 100)}%</div>
+                                <div className="mb-1 inline-flex items-center gap-2">
+                                    <IconSlot
+                                        code="SF"
+                                        label="sfx volume"
+                                        src="/icons/settings/settings_sfx.png"
+                                        className="h-5 w-5 text-[8px] border-slate-300/70 text-slate-200"
+                                        imageClassName="p-[1px]"
+                                    />
+                                    <span>SFX: {Math.round(sfxVolume * 100)}%</span>
+                                </div>
                                 <input
                                     type="range"
                                     min={0}
