@@ -6,6 +6,7 @@ import { createChampion, scaleChampion } from "@/lib/champions";
 import MapRow from "./row";
 import IconSlot from "../UI/iconSlot";
 import { prepareChampionForNextEncounter } from "@/lib/utils/combat";
+import { saveRun, loadRun, clearSave } from "@/lib/utils/saveLoad";
 import { applyDirectSkillUpgrade, applyUpgradeOption, generateUpgradeOptions, type UpgradeOption } from "@/lib/utils/upgrades";
 import { applyAffixesOnSpawn, rollEnemyAffixes } from "@/lib/utils/affixes";
 import { applyRelicOnAcquire, generateRelicOptions, RELIC_DEFS } from "@/lib/utils/relics";
@@ -37,8 +38,39 @@ type PendingOverlay =
     | { kind: "event"; nodeId: string; seed: number; event: RunEvent }
     | null;
 
-const PLAYER_CHAMPION: ChampionId = "garen";
-const ENEMY_POOL: ChampionId[] = ["darius", "garen"];
+type DefeatSnapshot = {
+    playerName: string;
+    level: number;
+    maxHealth: number;
+    baseArmor: number;
+    baseTenacity: number;
+    relics: RelicId[];
+    nodesCleared: number;
+    farthestRow: number;
+    upgradedSkills: Partial<Record<SkillUpgradeKey, number>>;
+};
+
+const XP_PER_LEVEL = 25;
+const MAX_CHAMPION_LEVEL = 10;
+
+const applyXpAndLevelUp = (champ: champion, xpGained: number): champion => {
+    if (champ.level >= MAX_CHAMPION_LEVEL) return champ;
+    let { level, xp, maxHealth, currentHealth, baseArmor, baseTenacity } = champ;
+    xp += xpGained;
+    while (level < MAX_CHAMPION_LEVEL) {
+        const needed = level * XP_PER_LEVEL;
+        if (xp < needed) break;
+        xp -= needed;
+        level += 1;
+        maxHealth += 10;
+        currentHealth = Math.min(maxHealth, currentHealth + 5);
+        baseArmor += 1;
+        baseTenacity += 1;
+    }
+    return { ...champ, level, xp, maxHealth, currentHealth, baseArmor, armor: baseArmor, baseTenacity, tenacity: baseTenacity };
+};
+
+const ENEMY_POOL: ChampionId[] = ["darius", "garen", "xinzhao"];
 const SKILL_UPGRADE_KEYS: SkillUpgradeKey[] = ["Q", "W", "E", "R"];
 const ALL_RELIC_IDS = Object.keys(RELIC_DEFS) as RelicId[];
 const MAP_HUD_ICON_SRCS = {
@@ -58,6 +90,10 @@ const RELIC_ICON_CODES: Record<RelicId, string> = {
     runic_lens: "RL",
     spirit_totem: "ST",
     first_blood_sigil: "FS",
+    executioner_mark: "EM",
+    tome_of_pain: "TP",
+    twin_edge: "TE",
+    elixir_of_force: "EF",
 };
 const EVENT_OPTION_ICON_CODES: Record<string, string> = {
     "event-shrine-gold": "GD",
@@ -156,26 +192,40 @@ const pickUniqueIndices = (count: number, picks: number, rng: () => number): num
 
 const assignNodeKinds = (rowMap: globalThis.Map<number, MapNodeData[]>, seed: number) => {
     const rng = createRng(seed);
+    const rowCount = rowMap.size;
 
+    // Row 2: rest + event
     const rowTwo = rowMap.get(2) ?? [];
     const rowTwoSpecials = pickUniqueIndices(rowTwo.length, Math.min(2, rowTwo.length), rng);
-    if (rowTwoSpecials[0] !== undefined) rowTwo[rowTwoSpecials[0]].kind = "event";
-    if (rowTwoSpecials[1] !== undefined) rowTwo[rowTwoSpecials[1]].kind = "rest";
+    if (rowTwoSpecials[0] !== undefined) rowTwo[rowTwoSpecials[0]].kind = "rest";
+    if (rowTwoSpecials[1] !== undefined) rowTwo[rowTwoSpecials[1]].kind = "event";
 
+    // Row 3: shop + elite
     const rowThree = rowMap.get(3) ?? [];
     const rowThreeSpecials = pickUniqueIndices(rowThree.length, Math.min(2, rowThree.length), rng);
     if (rowThreeSpecials[0] !== undefined) rowThree[rowThreeSpecials[0]].kind = "shop";
     if (rowThreeSpecials[1] !== undefined) rowThree[rowThreeSpecials[1]].kind = "elite";
 
+    // Row 4: elite + rest/event
     const rowFour = rowMap.get(4) ?? [];
-    if (rowFour.length > 0) {
-        const eliteIndex = Math.floor(rng() * rowFour.length);
-        rowFour[eliteIndex].kind = "elite";
+    const rowFourSpecials = pickUniqueIndices(rowFour.length, Math.min(2, rowFour.length), rng);
+    if (rowFourSpecials[0] !== undefined) rowFour[rowFourSpecials[0]].kind = "elite";
+    if (rowFourSpecials[1] !== undefined) rowFour[rowFourSpecials[1]].kind = rng() > 0.5 ? "event" : "rest";
 
-        if (rowFour.length > 1) {
-            const secondIndex = eliteIndex === 0 ? 1 : 0;
-            rowFour[secondIndex].kind = rng() > 0.5 ? "event" : "rest";
-        }
+    // Row 5: shop + event (if map has enough rows)
+    if (rowCount >= 7) {
+        const rowFive = rowMap.get(5) ?? [];
+        const rowFiveSpecials = pickUniqueIndices(rowFive.length, Math.min(2, rowFive.length), rng);
+        if (rowFiveSpecials[0] !== undefined) rowFive[rowFiveSpecials[0]].kind = "shop";
+        if (rowFiveSpecials[1] !== undefined) rowFive[rowFiveSpecials[1]].kind = "event";
+    }
+
+    // Row 6: elite + rest (if map has enough rows)
+    if (rowCount >= 8) {
+        const rowSix = rowMap.get(6) ?? [];
+        const rowSixSpecials = pickUniqueIndices(rowSix.length, Math.min(2, rowSix.length), rng);
+        if (rowSixSpecials[0] !== undefined) rowSix[rowSixSpecials[0]].kind = "elite";
+        if (rowSixSpecials[1] !== undefined) rowSix[rowSixSpecials[1]].kind = rng() > 0.5 ? "rest" : "event";
     }
 };
 
@@ -208,14 +258,15 @@ const rollEnemyRelicsForNode = (node: MapNodeData, seed: number): RelicId[] => {
 const generateEnemyForNode = (
     node: MapNodeData,
     seed: number,
-    playerChampionName: string,
+    playerChampionId: ChampionId,
 ): { enemy: champion; relics: RelicId[] } => {
-    const pool = ENEMY_POOL.filter((id) => id !== playerChampionName.toLowerCase());
+    const pool = ENEMY_POOL.filter((id) => id !== playerChampionId);
     const enemyPool = pool.length > 0 ? pool : ENEMY_POOL;
-    const pick = hashText(`${seed}-${node.id}`) % enemyPool.length;
+    const rng = createRng(hashText(`${seed}-${node.id}`));
+    const pick = Math.floor(rng() * enemyPool.length);
     const baseEnemy = createChampion(enemyPool[pick]);
 
-    const rowScale = 1 + node.row * 0.08;
+    const rowScale = 1 + node.row * 0.06;
     const bossBonus = node.kind === "boss" ? 0.2 : 0;
     const scaledEnemy = scaleChampion(baseEnemy, rowScale + bossBonus);
 
@@ -232,7 +283,7 @@ const generateEnemyForNode = (
 
 const buildGraphCandidate = (seed: number): MapGraph => {
     const rng = createRng(seed);
-    const rowWidths = [7, 5, 3, 2, 1];
+    const rowWidths = [3, 4, 4, 4, 4, 3, 2, 1];
     const nodes: MapNodeData[] = [];
     const edges: MapEdge[] = [];
 
@@ -295,17 +346,24 @@ const buildGraphCandidate = (seed: number): MapGraph => {
 
             addEdge(fromNode.id, nextRow[primaryTargetIndex].id);
 
-            const shouldAddAdjacentBranch = nextRow.length > 1 && rng() > 0.74;
-            if (!shouldAddAdjacentBranch) continue;
+            if (nextRow.length < 2) continue;
 
-            const branchDirection = rng() > 0.5 ? 1 : -1;
-            const secondaryTargetIndex = Math.min(
-                nextRow.length - 1,
-                Math.max(0, primaryTargetIndex + branchDirection),
-            );
+            const leftIdx = primaryTargetIndex - 1;
+            const rightIdx = primaryTargetIndex + 1;
+            const hasLeft = leftIdx >= 0;
+            const hasRight = rightIdx < nextRow.length;
 
-            if (secondaryTargetIndex !== primaryTargetIndex) {
-                addEdge(fromNode.id, nextRow[secondaryTargetIndex].id);
+            if (hasLeft && hasRight) {
+                // Always add at least one adjacent branch, 55% chance of both
+                const preferLeft = rng() > 0.5;
+                addEdge(fromNode.id, nextRow[preferLeft ? leftIdx : rightIdx].id);
+                if (rng() > 0.45) {
+                    addEdge(fromNode.id, nextRow[preferLeft ? rightIdx : leftIdx].id);
+                }
+            } else if (hasLeft) {
+                addEdge(fromNode.id, nextRow[leftIdx].id);
+            } else if (hasRight) {
+                addEdge(fromNode.id, nextRow[rightIdx].id);
             }
         }
 
@@ -362,21 +420,36 @@ const buildGraph = (seed: number): MapGraph => {
     return buildGraphCandidate(seed);
 };
 
-export default function MapView() {
-    const [currentNodeId, setCurrentNodeId] = useState("start");
-    const [mapSeed, setMapSeed] = useState(1);
-    const [player, setPlayer] = useState<champion>(() => createChampion(PLAYER_CHAMPION));
+export default function MapView({ initialChampion = "garen", loadSaved = false }: { initialChampion?: ChampionId; loadSaved?: boolean }) {
+    const savedRun = loadSaved ? loadRun() : null;
+    const [currentNodeId, setCurrentNodeId] = useState(savedRun?.currentNodeId ?? "start");
+    const [mapSeed, setMapSeed] = useState(savedRun?.mapSeed ?? 1);
+    const [player, setPlayer] = useState<champion>(() => savedRun?.player ?? createChampion(initialChampion));
     const [enemy, setEnemy] = useState<champion>(() => createChampion("darius"));
     const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
-    const [completedNodeIds, setCompletedNodeIds] = useState<Set<string>>(() => new Set());
+    const [completedNodeIds, setCompletedNodeIds] = useState<Set<string>>(() => new Set(savedRun?.completedNodeIds ?? []));
     const [pendingOverlay, setPendingOverlay] = useState<PendingOverlay>(null);
     const [runWon, setRunWon] = useState(false);
-    const [gold, setGold] = useState(20);
-    const [relics, setRelics] = useState<RelicId[]>([]);
+    const [gold, setGold] = useState(savedRun?.gold ?? 20);
+    const [relics, setRelics] = useState<RelicId[]>(savedRun?.relics ?? []);
     const [enemyRelics, setEnemyRelics] = useState<RelicId[]>([]);
+    const [mapFading, setMapFading] = useState(false);
+    const [defeatSnapshot, setDefeatSnapshot] = useState<DefeatSnapshot | null>(null);
     const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
     const graphRef = useRef<HTMLDivElement>(null);
     const linesSvgRef = useRef<SVGSVGElement>(null);
+
+    const ZOOM_MIN = 0.5;
+    const ZOOM_MAX = 2.5;
+    const ZOOM_INITIAL = 1.5;
+    const [zoom, setZoom] = useState(ZOOM_INITIAL);
+    const [panX, setPanX] = useState(0);
+    const [panY, setPanY] = useState(0);
+    const zoomRef = useRef(ZOOM_INITIAL);
+    const panRef = useRef({ x: 0, y: 0 });
+    const dragStateRef = useRef({ active: false, moved: false, startX: 0, startY: 0, startPanX: 0, startPanY: 0 });
+    const touchStateRef = useRef<{ dist: number | null }>({ dist: null });
+    const hasCenteredRef = useRef(false);
 
     useEffect(() => {
         setMapSeed(Date.now());
@@ -437,12 +510,96 @@ export default function MapView() {
             const centerY = rect.top + rect.height / 2;
 
             nextPositions[nodeId] = {
-                x: centerX - svgRect.left,
-                y: centerY - svgRect.top,
+                x: (centerX - svgRect.left) / zoomRef.current,
+                y: (centerY - svgRect.top) / zoomRef.current,
             };
         }
 
         setNodePositions(nextPositions);
+    }, []);
+
+    const applyZoom = useCallback((newZoom: number, originX = 0, originY = 0) => {
+        const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newZoom));
+        const ratio = clamped / zoomRef.current;
+        const nx = originX + (panRef.current.x - originX) * ratio;
+        const ny = originY + (panRef.current.y - originY) * ratio;
+        zoomRef.current = clamped;
+        panRef.current = { x: nx, y: ny };
+        setZoom(clamped);
+        setPanX(nx);
+        setPanY(ny);
+        requestAnimationFrame(recalculateNodePositions);
+    }, [recalculateNodePositions]);
+
+    const handleMapMouseDown = useCallback((e: React.MouseEvent) => {
+        if (e.button !== 0) return;
+        dragStateRef.current = { active: true, moved: false, startX: e.clientX, startY: e.clientY, startPanX: panRef.current.x, startPanY: panRef.current.y };
+    }, []);
+
+    const handleMapMouseMove = useCallback((e: React.MouseEvent) => {
+        if (!dragStateRef.current.active) return;
+        const dx = e.clientX - dragStateRef.current.startX;
+        const dy = e.clientY - dragStateRef.current.startY;
+        if (!dragStateRef.current.moved && Math.hypot(dx, dy) > 4) dragStateRef.current.moved = true;
+        const nx = dragStateRef.current.startPanX + dx;
+        const ny = dragStateRef.current.startPanY + dy;
+        panRef.current = { x: nx, y: ny };
+        setPanX(nx);
+        setPanY(ny);
+        requestAnimationFrame(recalculateNodePositions);
+    }, [recalculateNodePositions]);
+
+    const handleMapMouseUp = useCallback(() => { dragStateRef.current.active = false; }, []);
+
+    const handleContainerClickCapture = useCallback((e: React.MouseEvent) => {
+        if (dragStateRef.current.moved) {
+            e.stopPropagation();
+            dragStateRef.current.moved = false;
+        }
+    }, []);
+
+    const handleTouchStart = useCallback((e: React.TouchEvent) => {
+        if (e.touches.length === 1) {
+            const t = e.touches[0];
+            dragStateRef.current = { active: true, moved: false, startX: t.clientX, startY: t.clientY, startPanX: panRef.current.x, startPanY: panRef.current.y };
+            touchStateRef.current.dist = null;
+        } else if (e.touches.length === 2) {
+            dragStateRef.current.active = false;
+            const dx = e.touches[1].clientX - e.touches[0].clientX;
+            const dy = e.touches[1].clientY - e.touches[0].clientY;
+            touchStateRef.current.dist = Math.hypot(dx, dy);
+        }
+    }, []);
+
+    const handleTouchMove = useCallback((e: React.TouchEvent) => {
+        if (e.touches.length === 1 && dragStateRef.current.active) {
+            const t = e.touches[0];
+            const dx = t.clientX - dragStateRef.current.startX;
+            const dy = t.clientY - dragStateRef.current.startY;
+            if (!dragStateRef.current.moved && Math.hypot(dx, dy) > 4) dragStateRef.current.moved = true;
+            const nx = dragStateRef.current.startPanX + dx;
+            const ny = dragStateRef.current.startPanY + dy;
+            panRef.current = { x: nx, y: ny };
+            setPanX(nx);
+            setPanY(ny);
+            requestAnimationFrame(recalculateNodePositions);
+        } else if (e.touches.length === 2 && touchStateRef.current.dist !== null) {
+            const dx = e.touches[1].clientX - e.touches[0].clientX;
+            const dy = e.touches[1].clientY - e.touches[0].clientY;
+            const newDist = Math.hypot(dx, dy);
+            const container = graphRef.current;
+            if (!container) return;
+            const rect = container.getBoundingClientRect();
+            const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left - rect.width / 2;
+            const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top - rect.height / 2;
+            applyZoom(zoomRef.current * (newDist / touchStateRef.current.dist), midX, midY);
+            touchStateRef.current.dist = newDist;
+        }
+    }, [applyZoom, recalculateNodePositions]);
+
+    const handleTouchEnd = useCallback(() => {
+        dragStateRef.current.active = false;
+        touchStateRef.current.dist = null;
     }, []);
 
     useEffect(() => {
@@ -470,17 +627,63 @@ export default function MapView() {
         };
     }, [recalculateNodePositions, rows, pendingOverlay, currentNodeId, runWon]);
 
+    // On first load, pan so the bottom row (first selectable) is visible near the bottom of the viewport
+    useEffect(() => {
+        if (hasCenteredRef.current) return;
+        const positions = Object.values(nodePositions);
+        if (positions.length === 0) return;
+        const el = graphRef.current;
+        const svgEl = linesSvgRef.current;
+        if (!el || !svgEl) return;
+
+        const viewH = el.clientHeight;
+        const z = zoomRef.current;
+        const maxContentY = Math.max(...positions.map(p => p.y));
+        const svgRect = svgEl.getBoundingClientRect();
+        const currentBottomScreenY = svgRect.top + maxContentY * z;
+        const targetBottomScreenY = viewH - 80;
+        const dy = targetBottomScreenY - currentBottomScreenY;
+        const newPanY = panRef.current.y + dy;
+        panRef.current.y = newPanY;
+        setPanY(newPanY);
+        hasCenteredRef.current = true;
+        requestAnimationFrame(recalculateNodePositions);
+    }, [nodePositions, recalculateNodePositions]);
+
+    useEffect(() => {
+        const el = graphRef.current;
+        if (!el) return;
+        const onWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            const rect = el.getBoundingClientRect();
+            const ox = e.clientX - rect.left - rect.width / 2;
+            const oy = e.clientY - rect.top - rect.height / 2;
+            applyZoom(zoomRef.current * (e.deltaY > 0 ? 0.9 : 1.1), ox, oy);
+        };
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => el.removeEventListener('wheel', onWheel);
+    }, [applyZoom]);
+
     const completeNode = (nodeId: string) => {
         setCurrentNodeId(nodeId);
         setCompletedNodeIds((prev) => {
             const next = new Set(prev);
             next.add(nodeId);
+            saveRun({
+                initialChampion,
+                player,
+                relics,
+                gold,
+                mapSeed,
+                currentNodeId: nodeId,
+                completedNodeIds: Array.from(next),
+            });
             return next;
         });
     };
 
     const canSelectNode = (nodeId: string) => {
-        if (activeNodeId || pendingOverlay || runWon) return false;
+        if (activeNodeId || pendingOverlay || runWon || mapFading) return false;
 
         const currentNode = nodeById.get(currentNodeId);
         const nextRow = currentNode ? currentNode.row + 1 : 1;
@@ -492,9 +695,11 @@ export default function MapView() {
     };
 
     const restartMap = () => {
+        clearSave();
+        hasCenteredRef.current = false;
         setCurrentNodeId("start");
         setMapSeed(Date.now());
-        setPlayer(createChampion(PLAYER_CHAMPION));
+        setPlayer(createChampion(initialChampion));
         setEnemy(createChampion("darius"));
         setActiveNodeId(null);
         setCompletedNodeIds(new Set());
@@ -503,6 +708,8 @@ export default function MapView() {
         setGold(20);
         setRelics([]);
         setEnemyRelics([]);
+        setDefeatSnapshot(null);
+        setMapFading(false);
     };
 
     const onSelectNode = (nodeId: string) => {
@@ -512,10 +719,14 @@ export default function MapView() {
         if (!selectedNode) return;
 
         if (selectedNode.kind === "combat" || selectedNode.kind === "elite" || selectedNode.kind === "boss") {
-            const generated = generateEnemyForNode(selectedNode, mapSeed, player.name);
+            const generated = generateEnemyForNode(selectedNode, mapSeed, initialChampion);
             setEnemy(generated.enemy);
             setEnemyRelics(generated.relics);
-            setActiveNodeId(nodeId);
+            setMapFading(true);
+            setTimeout(() => {
+                setActiveNodeId(nodeId);
+                setMapFading(false);
+            }, 500);
             return;
         }
 
@@ -556,7 +767,10 @@ export default function MapView() {
             currentHealth: Math.min(preparedPlayer.maxHealth, preparedPlayer.currentHealth + 12),
         };
 
-        setPlayer(healedPlayer);
+        const xpReward = wonNode.kind === "boss" ? 60 : wonNode.kind === "elite" ? 35 : 20;
+        const finalPlayer = applyXpAndLevelUp(healedPlayer, xpReward);
+
+        setPlayer(finalPlayer);
         completeNode(activeNodeId);
 
         const goldReward = wonNode.kind === "elite" ? 45 : wonNode.kind === "combat" ? 25 : 0;
@@ -587,8 +801,20 @@ export default function MapView() {
         setActiveNodeId(null);
     };
 
-    const handleCombatLose = () => {
-        restartMap();
+    const handleCombatLose = (finalPlayer: champion) => {
+        const wonNode = activeNodeId ? nodeById.get(activeNodeId) : null;
+        setDefeatSnapshot({
+            playerName: finalPlayer.name,
+            level: finalPlayer.level,
+            maxHealth: finalPlayer.maxHealth,
+            baseArmor: finalPlayer.baseArmor,
+            baseTenacity: finalPlayer.baseTenacity,
+            relics: [...relics],
+            nodesCleared: completedNodeIds.size,
+            farthestRow: wonNode?.row ?? 0,
+            upgradedSkills: { ...finalPlayer.upgradedSkills },
+        });
+        setActiveNodeId(null);
     };
 
     const onSelectUpgrade = (option: UpgradeOption) => {
@@ -726,6 +952,9 @@ export default function MapView() {
     }, [currentNodeId, edgesByFrom]);
 
     if (activeNodeId) {
+        const activeNode = nodeById.get(activeNodeId);
+        const combatGoldReward = activeNode?.kind === "elite" ? 45 : activeNode?.kind === "combat" ? 25 : 0;
+        const combatXpReward = activeNode?.kind === "boss" ? 60 : activeNode?.kind === "elite" ? 35 : 20;
         return (
             <div className="h-screen w-screen overflow-hidden">
                 <Combat
@@ -736,6 +965,9 @@ export default function MapView() {
                     setEnemy={setEnemy}
                     playerRelics={relics}
                     enemyRelics={enemyRelics}
+                    goldReward={combatGoldReward}
+                    xpReward={combatXpReward}
+                    nodeKind={activeNode?.kind ?? "combat"}
                     onPlayerWin={handleCombatWin}
                     onPlayerLose={handleCombatLose}
                 />
@@ -745,7 +977,7 @@ export default function MapView() {
 
     return (
         <div
-            className="w-full min-h-screen overflow-y-auto px-3 py-3 bg-cover bg-center bg-no-repeat"
+            className={`w-full min-h-screen overflow-y-auto px-3 py-3 bg-cover bg-center bg-no-repeat transition-opacity duration-500 ${mapFading ? "opacity-0" : "opacity-100"}`}
             style={{
                 backgroundImage: " url('/images/MapBackground.png')",
             }}
@@ -785,6 +1017,15 @@ export default function MapView() {
                             imageClassName="p-[1px]"
                         />
                         <span>HP: {player.currentHealth}/{player.maxHealth}</span>
+                    </div>
+                    <div className="px-3 py-1.5 rounded-md bg-black/50 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
+                        <IconSlot
+                            code="LV"
+                            label="player level"
+                            className="h-5 w-5 text-[8px] border-blue-300/70 text-blue-200"
+                            imageClassName="p-[1px]"
+                        />
+                        <span>Lv {player.level} · {player.xp}/{player.level * XP_PER_LEVEL} XP</span>
                     </div>
                     <div className="px-3 py-1.5 rounded-md bg-black/50 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
                         <IconSlot
@@ -852,6 +1093,66 @@ export default function MapView() {
                 )}
 
                 <div className="w-full flex flex-col items-center gap-y-6 md:gap-y-10">
+                {defeatSnapshot && (
+                    <div className="fixed inset-0 z-[150] bg-black/92 flex items-center justify-center p-4">
+                        <div className="w-full max-w-lg border-2 border-red-500/60 bg-neutral-950 text-center p-4 sm:p-8 flex flex-col items-center gap-4 sm:gap-6 overflow-y-auto max-h-[90vh] shadow-[0_0_60px_rgba(239,68,68,0.2)]">
+                            <div className="text-xs text-red-400/80 tracking-[0.4em] uppercase">Run Over</div>
+                            <div className="text-4xl md:text-5xl font-bold tracking-[0.15em] text-red-400">DEFEATED</div>
+                            <div className="w-full h-px bg-red-500/30" />
+                            <div className="text-sm text-neutral-400">{defeatSnapshot.playerName} · Level {defeatSnapshot.level}</div>
+                            <div className="w-full grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                                <div className="bg-neutral-900 rounded p-3">
+                                    <div className="font-bold text-neutral-200">{defeatSnapshot.maxHealth}</div>
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider mt-1">Max HP</div>
+                                </div>
+                                <div className="bg-neutral-900 rounded p-3">
+                                    <div className="font-bold text-neutral-200">{defeatSnapshot.baseArmor}</div>
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider mt-1">Armor</div>
+                                </div>
+                                <div className="bg-neutral-900 rounded p-3">
+                                    <div className="font-bold text-neutral-200">{defeatSnapshot.baseTenacity}</div>
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider mt-1">Tenacity</div>
+                                </div>
+                                <div className="bg-neutral-900 rounded p-3">
+                                    <div className="font-bold text-neutral-200">{defeatSnapshot.nodesCleared}</div>
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider mt-1">Nodes Cleared</div>
+                                </div>
+                                <div className="bg-neutral-900 rounded p-3">
+                                    <div className="font-bold text-neutral-200">Row {defeatSnapshot.farthestRow}</div>
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider mt-1">Farthest</div>
+                                </div>
+                                <div className="bg-neutral-900 rounded p-3">
+                                    <div className="font-bold text-neutral-200">{defeatSnapshot.relics.length}</div>
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider mt-1">Relics</div>
+                                </div>
+                            </div>
+                            {defeatSnapshot.relics.length > 0 && (
+                                <div className="w-full">
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-widest mb-2">Relics Collected</div>
+                                    <div className="flex flex-wrap gap-2 justify-center">
+                                        {defeatSnapshot.relics.map((relicId) => (
+                                            <IconSlot
+                                                key={relicId}
+                                                code={RELIC_ICON_CODES[relicId] ?? "RL"}
+                                                label={RELIC_DEFS[relicId].label}
+                                                src={getRelicIconSrc(relicId)}
+                                                className="h-9 w-9 border-neutral-600/70 text-neutral-400"
+                                                imageClassName="p-[1px]"
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            <button
+                                type="button"
+                                onClick={restartMap}
+                                className="border border-red-500/60 px-10 py-3 text-red-300 hover:bg-red-900/20 tracking-[0.12em] uppercase text-sm font-semibold transition-colors"
+                            >
+                                Begin New Run
+                            </button>
+                        </div>
+                    </div>
+                )}
                 {pendingOverlay?.kind === "upgrade" && (
                     <div className="fixed inset-0 z-[120] bg-black/75 flex items-center justify-center p-4">
                         <div className="w-full max-w-6xl min-h-[74vh] border-2 border-amber-300/70 bg-[radial-gradient(ellipse_at_top,#2b2012,#1a120b_55%,#120b06)] text-amber-100 p-4 md:p-8 grid grid-rows-[auto_1fr_auto] gap-6 shadow-[0_0_40px_rgba(251,191,36,0.18)]">
@@ -1196,8 +1497,49 @@ export default function MapView() {
 
                 <div
                     ref={graphRef}
-                    className="relative w-full max-w-6xl h-[clamp(500px,calc(100vh-170px),760px)] bg-neutral-950/30 overflow-hidden"
+                    className="relative w-full max-w-6xl h-[clamp(600px,calc(100vh-170px),920px)] bg-neutral-950/30 overflow-hidden select-none"
+                    style={{ cursor: dragStateRef.current.active ? 'grabbing' : 'grab' }}
+                    onMouseDown={handleMapMouseDown}
+                    onMouseMove={handleMapMouseMove}
+                    onMouseUp={handleMapMouseUp}
+                    onMouseLeave={handleMapMouseUp}
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                    onClickCapture={handleContainerClickCapture}
                 >
+                    {/* Zoom controls */}
+                    <div className="absolute bottom-3 right-3 z-20 flex flex-col gap-1 pointer-events-auto">
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); applyZoom(zoomRef.current * 1.25); }}
+                            className="w-8 h-8 bg-black/65 hover:bg-black/80 text-white text-lg font-bold flex items-center justify-center border border-neutral-600/50"
+                        >+</button>
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); zoomRef.current = ZOOM_INITIAL; panRef.current = { x: 0, y: 0 }; setZoom(ZOOM_INITIAL); setPanX(0); setPanY(0); requestAnimationFrame(recalculateNodePositions); }}
+                            className="w-8 h-8 bg-black/65 hover:bg-black/80 text-white text-xs font-bold flex items-center justify-center border border-neutral-600/50"
+                        >⊙</button>
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); applyZoom(zoomRef.current * 0.8); }}
+                            className="w-8 h-8 bg-black/65 hover:bg-black/80 text-white text-lg font-bold flex items-center justify-center border border-neutral-600/50"
+                        >−</button>
+                    </div>
+                    <div className="absolute bottom-3 left-3 z-20 text-[10px] text-neutral-500 tracking-widest bg-black/40 px-2 py-1 pointer-events-none">
+                        {Math.round(zoom * 100)}%
+                    </div>
+
+                    {/* Pan/zoom canvas */}
+                    <div
+                        style={{
+                            transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+                            transformOrigin: 'center center',
+                            position: 'absolute',
+                            inset: 0,
+                            willChange: 'transform',
+                        }}
+                    >
                     <svg ref={linesSvgRef} className="absolute inset-0 w-full h-full pointer-events-none">
                         {edges.map((edge) => {
                             const from = nodePositions[edge.from];
@@ -1302,6 +1644,7 @@ export default function MapView() {
                             </div>
                         </div>
                     </div>
+                    </div>{/* end zoom/pan canvas */}
                 </div>
             </div>
         </div>

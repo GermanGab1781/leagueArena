@@ -21,9 +21,11 @@ export default function Combat({
     enemyRelics = [],
     onPlayerLose,
     onPlayerWin,
+    goldReward = 0,
+    xpReward = 0,
 }: CombatProps) {
-    const playerKey = player.name.toLowerCase();
-    const enemyKey = enemy.name.toLowerCase();
+    const playerKey = player.name.toLowerCase().replace(/\s+/g, '');
+    const enemyKey = enemy.name.toLowerCase().replace(/\s+/g, '');
 
     const playerModelData: ChampionModelData = championsData[playerKey];
     const enemyModelData: ChampionModelData = championsData[enemyKey];
@@ -34,9 +36,15 @@ export default function Combat({
     const [turn, setTurn] = useState<turn>({ number: 1, playerTurn: true });
     const [combatStatus, setCombatStatus] = useState<CombatStatus>("active");
     const [isResolvingAction, setIsResolvingAction] = useState(false);
+    const [showIntro, setShowIntro] = useState(true);
+    const [introFading, setIntroFading] = useState(false);
+    const [victoryData, setVictoryData] = useState<{ player: champion; enemy: champion } | null>(null);
 
     const [playerCooldowns, setPlayerCooldowns] = useState<SkillCooldowns>({ ...EMPTY_COOLDOWNS });
     const [enemyCooldowns, setEnemyCooldowns] = useState<SkillCooldowns>({ ...EMPTY_COOLDOWNS });
+
+    const [hitFlash, setHitFlash] = useState<{ side: "player" | "enemy"; heavy: boolean } | null>(null);
+    const [stunIndicator, setStunIndicator] = useState<"player" | "enemy" | null>(null);
 
     const playerRef = useRef(player);
     const enemyRef = useRef(enemy);
@@ -100,6 +108,12 @@ export default function Combat({
         return () => clearAllTimeouts();
     }, [clearAllTimeouts]);
 
+    useEffect(() => {
+        const fadeTimer = setTimeout(() => setIntroFading(true), 2000);
+        const hideTimer = setTimeout(() => setShowIntro(false), 2500);
+        return () => { clearTimeout(fadeTimer); clearTimeout(hideTimer); };
+    }, []);
+
     const finishCombat = useCallback((playerWon: boolean, finalPlayer: champion, finalEnemy: champion) => {
         if (hasFinishedRef.current || statusRef.current !== "active") return;
 
@@ -113,7 +127,7 @@ export default function Combat({
             if (enemyModelData.animations.death) {
                 setEnemyModelAnim(enemyModelData.animations.death);
             }
-            onPlayerWin?.(finalPlayer, finalEnemy);
+            setVictoryData({ player: finalPlayer, enemy: finalEnemy });
             return;
         }
 
@@ -194,6 +208,14 @@ export default function Combat({
                 setEnemyCooldowns((prev) => tickCooldowns(prev, skillKey, result.skill.cooldown));
             }
 
+            if (result.totalDamageDealt > 0) {
+                const hitSide = isPlayerActor ? "enemy" : "player";
+                const maxHP = isPlayerActor ? latestTarget.maxHealth : latestActor.maxHealth;
+                const heavy = result.totalDamageDealt / maxHP >= 0.18;
+                setHitFlash({ side: hitSide, heavy });
+                setTimeout(() => setHitFlash(null), heavy ? 420 : 260);
+            }
+
             const currentPlayer = playerRef.current;
             const currentEnemy = enemyRef.current;
 
@@ -207,9 +229,13 @@ export default function Combat({
                 return;
             }
 
-            setIsResolvingAction(false);
-            isResolvingActionRef.current = false;
-            setTurn((prev) => ({ number: prev.number + 1, playerTurn: !prev.playerTurn }));
+            // Wait for walk-back / return animation before handing the turn to the next actor
+            registerTimeout(() => {
+                if (statusRef.current !== "active") return;
+                setIsResolvingAction(false);
+                isResolvingActionRef.current = false;
+                setTurn((prev) => ({ number: prev.number + 1, playerTurn: !prev.playerTurn }));
+            }, skill.returnDelay ?? 0);
         }, skill.time);
     }, [
         enemyModelData.animations,
@@ -256,6 +282,8 @@ export default function Combat({
         }
 
         if (processedActor.stunned) {
+            setStunIndicator(isPlayerTurn ? "player" : "enemy");
+            setTimeout(() => setStunIndicator(null), TURN_SKIP_DELAY_MS - 100);
             registerTimeout(() => {
                 if (statusRef.current !== "active") return;
                 setTurn((prev) => ({ number: prev.number + 1, playerTurn: !prev.playerTurn }));
@@ -308,6 +336,33 @@ export default function Combat({
                 </Suspense>
             </Canvas>
 
+            {/* Hit flash overlays */}
+            {hitFlash && (
+                <div
+                    className={`absolute inset-0 pointer-events-none z-[5] transition-opacity duration-100 ${
+                        hitFlash.heavy
+                            ? "bg-red-500/30"
+                            : "bg-red-400/18"
+                    } ${hitFlash.side === "player" ? "clip-left" : "clip-right"}`}
+                    style={{
+                        clipPath: hitFlash.side === "player" ? "inset(0 50% 0 0)" : "inset(0 0 0 50%)",
+                    }}
+                />
+            )}
+
+            {/* Stun indicators */}
+            {stunIndicator && (
+                <div
+                    className={`absolute top-1/3 z-[10] pointer-events-none ${
+                        stunIndicator === "player" ? "left-4 sm:left-12" : "right-4 sm:right-12"
+                    }`}
+                >
+                    <div className="bg-yellow-400/90 text-black text-xs sm:text-sm font-black tracking-[0.25em] uppercase px-3 py-1.5 shadow-lg animate-pulse">
+                        STUNNED
+                    </div>
+                </div>
+            )}
+
             {/* UI overlays */}
             <MainUi
                 turn={turn}
@@ -341,6 +396,56 @@ export default function Combat({
                     >
                         SKIP
                     </button>
+                </div>
+            )}
+
+            {/* VS Intro Screen */}
+            {showIntro && (
+                <div
+                    className={`absolute inset-0 z-[200] bg-black flex flex-col items-center justify-center gap-8 cursor-pointer transition-opacity duration-500 ${introFading ? "opacity-0 pointer-events-none" : "opacity-100"}`}
+                    onClick={() => {
+                        setIntroFading(true);
+                        setTimeout(() => setShowIntro(false), 500);
+                    }}
+                >
+                    <div className="text-center">
+                        <div className="text-4xl md:text-6xl font-bold tracking-[0.2em] text-white uppercase">{player.name}</div>
+                        <div className="text-2xl md:text-3xl font-bold tracking-[0.5em] text-neutral-500 my-4">VS</div>
+                        <div className="text-4xl md:text-6xl font-bold tracking-[0.2em] text-red-400 uppercase">{enemy.name}</div>
+                    </div>
+                    <div className="text-xs text-neutral-600 tracking-[0.25em] uppercase">Tap to skip</div>
+                </div>
+            )}
+
+            {/* Victory Screen */}
+            {victoryData && (
+                <div className="absolute inset-0 z-[200] bg-black/90 flex items-center justify-center p-4">
+                    <div className="w-full max-w-md border-2 border-amber-400/70 bg-neutral-950 text-center p-4 sm:p-8 flex flex-col items-center gap-4 sm:gap-6 overflow-y-auto max-h-[90vh] shadow-[0_0_60px_rgba(251,191,36,0.2)]">
+                        <div className="text-xs text-amber-400/80 tracking-[0.4em] uppercase">CONGRATS YOU WON!!</div>
+                        <div className="text-4xl md:text-5xl font-bold tracking-[0.15em] text-amber-300">VICTORY</div>
+                        <div className="w-full h-px bg-amber-400/30" />
+                        <div className="flex flex-wrap gap-4 sm:gap-8 justify-center">
+                            <div className="flex flex-col items-center gap-1">
+                                <div className="text-2xl font-bold text-amber-200">+{goldReward}g</div>
+                                <div className="text-[10px] text-neutral-500 tracking-[0.2em] uppercase">Gold</div>
+                            </div>
+                            <div className="flex flex-col items-center gap-1">
+                                <div className="text-2xl font-bold text-blue-300">+{xpReward} XP</div>
+                                <div className="text-[10px] text-neutral-500 tracking-[0.2em] uppercase">Experience</div>
+                            </div>
+                            <div className="flex flex-col items-center gap-1">
+                                <div className="text-2xl font-bold text-emerald-300">+12 HP</div>
+                                <div className="text-[10px] text-neutral-500 tracking-[0.2em] uppercase">Recovered</div>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => onPlayerWin?.(victoryData.player, victoryData.enemy)}
+                            className="border border-amber-400/70 px-10 py-3 text-amber-200 hover:bg-amber-900/20 tracking-[0.12em] uppercase text-sm font-semibold transition-colors"
+                        >
+                            Claim Rewards
+                        </button>
+                    </div>
                 </div>
             )}
         </div>

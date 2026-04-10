@@ -4,13 +4,17 @@ const steps = (
   skillName: keyof ChampionAnimations,
   movement?: Partial<Record<number, AnimationStep['moveTo']>>,
   rotation?: Partial<Record<number, AnimationStep['rotateTo']>>,
-  sfx?: Partial<Record<number, AnimationStep['sfx']>>
+  sfx?: Partial<Record<number, AnimationStep['sfx']>>,
+  enemyMovement?: Partial<Record<number, AnimationStep['enemyMoveTo']>>,
+  enemyRotation?: Partial<Record<number, AnimationStep['enemyRotateTo']>>
 ): AnimationStep[] =>
   names.map((name, i) => ({
-    name,skillName,
+    name, skillName,
     ...(movement?.[i] ? { moveTo: movement[i] } : {}),
     ...(rotation?.[i] ? { rotateTo: rotation[i] } : {}),
     ...(sfx?.[i] ? { sfx: sfx[i] } : {}),
+    ...(enemyMovement?.[i] ? { enemyMoveTo: enemyMovement[i] } : {}),
+    ...(enemyRotation?.[i] ? { enemyRotateTo: enemyRotation[i] } : {}),
   }));
 
 
@@ -22,7 +26,7 @@ export const championsData: Record<string, ChampionModelData> = {
     name: 'Garen',
     modelPath: '/models/Garen/Garen.glb',
     animations: {
-      idle: steps(['garen_2013_idle1.anm'], 'idle',{},{},{}),
+      idle: steps(['garen_2013_idle1.anm'], 'idle', {}, {}, {}),
       Attack: steps(
         ['garen_2013_attack_02.anm'],
         'Attack',
@@ -50,6 +54,13 @@ export const championsData: Record<string, ChampionModelData> = {
         {
           0: { audios: ['/models/Garen/audios/Q1.mp3'] },
           1: { audios: ['/models/Garen/audios/Attack1.mp3'] }
+        },
+        {
+          0: { x: 0.6, z: 0.5, duration: 1.4 },
+          2: { x: 3, z: -1, duration: 1 },
+        },
+        {
+          2: { y: -240, duration: 0.7 },
         }
       ),
       W: steps(
@@ -81,6 +92,13 @@ export const championsData: Record<string, ChampionModelData> = {
         },
         {
           0: { audios: ['/models/Garen/audios/E1.mp3', '/models/Garen/audios/E2.mp3'] },
+        },
+        {
+          0: { x: 0.6, z: 0.5, duration: 3 },
+          1: { x: 3, z: -1, duration: 1.4 },
+        },
+        {
+          1: { y: -240, duration: 0.7 },
         }
       ),
       R: steps(
@@ -96,6 +114,76 @@ export const championsData: Record<string, ChampionModelData> = {
     },
   },
 
+  xinzhao: {
+    // Clip names verified from xin_zhao.glb (63 anims). Riot uses PascalCase here --
+    // naming varies per champion. Always parse the GLB before wiring a new model.
+    name: 'Xin Zhao',
+    modelPath: '/models/xin zhao/xin_zhao.glb',
+    animations: {
+      idle: steps(['IdleBase'], 'idle'),
+      Attack: steps(['Attack1_Hit'], 'Attack'),
+      Q: steps(
+        ['RunBase', 'Spell1_Attack1', 'RunBase'],
+        'Q',
+        {
+          0: { x: 2.4, z: -0.5, duration: 1.2 },
+          2: { x: -1, z: 2, duration: 1 },
+        },
+        {
+          2: { y: -80, duration: 0.5 },
+        },
+        {},
+        {
+          0: { x: 0.6, z: 0.5, duration: 1.2 },
+          2: { x: 3, z: -1, duration: 1 },
+        },
+        {
+          2: { y: -240, duration: 0.5 },
+        }
+      ),
+      W: steps(
+        ['RunBase', 'Spell2_b.XinZhaoRework.anm', 'RunBase'],
+        'W',
+        {
+          0: { x: 2.4, z: -0.5, duration: 1 },
+          2: { x: -1, z: 2, duration: 1 },
+        },
+        {
+          2: { y: -80, duration: 0.5 },
+        },
+        {},
+        {
+          0: { x: 0.6, z: 0.5, duration: 1 },
+          2: { x: 3, z: -1, duration: 1 },
+        },
+        {
+          2: { y: -240, duration: 0.5 },
+        }
+      ),
+      E: steps(
+        ['RunBase', 'Spell3'],
+        'E',
+        {
+          0: { x: 2.4, z: -0.5, duration: 1.8 },
+          1: { x: -1, z: 2, duration: 1.2 },
+        },
+        {
+          1: { y: -80, duration: 0.5 },
+        },
+        {},
+        {
+          0: { x: 0.6, z: 0.5, duration: 1.8 },
+          1: { x: 3, z: -1, duration: 1.2 },
+        },
+        {
+          1: { y: -240, duration: 0.5 },
+        }
+      ),
+      R: steps(['Spell4', 'Spell4_To_Idle'], 'R'),
+      death: steps(['Death'], 'death'),
+    },
+  },
+
   darius: {
     name: 'Darius',
     modelPath: '/models/Darius/Darius.glb',
@@ -106,18 +194,34 @@ export const championsData: Record<string, ChampionModelData> = {
         ['darius_spell1_in.anm', 'darius_spell1.anm', 'darius_run.anm'],
         'Q',
         {
+          0: { x: 2.4, z: -0.5, duration: 1 },
+          2: { x: -1, z: 2, duration: 1.5 },
+        },
+        {
+          2: { y: -80, duration: 0.2 },
+        },
+        {
+          1: { audios: ['/models/Darius/audios/Q1.mp3'] }
+        },
+        {
           0: { x: 0.6, z: 0.5, duration: 1 },
           2: { x: 3, z: -1, duration: 1.5 },
         },
         {
           2: { y: -240, duration: 0.2 },
-        },{
-          1: { audios: ['/models/Darius/audios/Q1.mp3'] }
         }
       ),
       W: steps(
         ['darius_spell2_run.anm', 'darius_spell2.anm', 'darius_run.anm'],
         'W',
+        {
+          0: { x: 2.4, z: -0.5, duration: 2 },
+          2: { x: -1, z: 2, duration: 1.7 },
+        },
+        {
+          2: { y: -80, duration: 0.5 },
+        },
+        {},
         {
           0: { x: 0.6, z: 0.5, duration: 2 },
           2: { x: 3, z: -1, duration: 1.7 },

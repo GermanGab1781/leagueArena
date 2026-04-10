@@ -139,6 +139,7 @@ export function resolveSkillCast(
         relics: context.attackerRelics ?? [],
         skillKey,
         isFirstActionOfCombat: context.isAttackerFirstActionOfCombat ?? false,
+        defender: nextDefender,
     });
 
     const rawPhysicalDamage = (skill.physicalDamage ?? 0) + relicDamageBonus.bonusPhysical;
@@ -186,6 +187,26 @@ export function resolveSkillCast(
             nextDefender = {
                 ...nextDefender,
                 currentHealth: 0,
+            };
+        }
+    }
+
+    if (attackerName === "xin zhao" && skillKey === "Q") {
+        // Q: Three Talon Strike — stuns the enemy for 1 turn
+        nextDefender = {
+            ...nextDefender,
+            debuffs: [...nextDefender.debuffs, { type: "stun", value: 0, duration: 1, remaining: 1 }],
+        };
+    }
+
+    if (attackerName === "xin zhao" && skillKey === "R") {
+        // R: Crescent Guard — bonus true damage per tenacityCrack stack on enemy
+        const tenCrackStacks = nextDefender.debuffs.filter((d) => d.type === "tenacityCrack").length;
+        const bonusTrueDamage = tenCrackStacks * 8;
+        if (bonusTrueDamage > 0) {
+            nextDefender = {
+                ...nextDefender,
+                currentHealth: Math.max(nextDefender.currentHealth - bonusTrueDamage, 0),
             };
         }
     }

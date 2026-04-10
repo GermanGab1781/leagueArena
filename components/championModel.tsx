@@ -14,6 +14,7 @@ type AnimationFinishedEvent = THREE.Event & {
 const DEFAULT_CHAMPION_SFX_VOLUME = 0.09;
 
 export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0], animationsActive, setAnimations }: ChampionModelProps) {
+  const isEnemySide = position[0] > 0; // enemy is at x=3, player at x=-1
   const audioSettings = useAudioSettings();
   const championSfxVolume = audioSettings?.sfxVolume ?? DEFAULT_CHAMPION_SFX_VOLUME;
   const [currentAnimation, setCurrentAnimation] = useState<AnimationStep[]>(animationsActive);
@@ -23,9 +24,11 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
   const currentPos = useRef(new THREE.Vector3(...position));
   const movementStartTime = useRef<number | null>(null);
   const movementStartPos = useRef<THREE.Vector3 | null>(null);
+  const activeMoveToRef = useRef<AnimationStep['moveTo'] | null>(null);
 
   const rotationStartTime = useRef<number | null>(null);
   const rotationStartRot = useRef<THREE.Euler | null>(null);
+  const activeRotateToRef = useRef<AnimationStep['rotateTo'] | null>(null);
 
   const { scene, animations } = useGLTF(data.modelPath);
   const { actions, mixer } = useAnimations(animations, ref);
@@ -96,29 +99,35 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
       currentAction.clampWhenFinished = true;
     }
 
-    if (animStep.moveTo?.duration && clip.duration > 0) {
-      const playbackSpeed = clip.duration / animStep.moveTo.duration;
-      currentAction.setEffectiveTimeScale(playbackSpeed);
+    const effectiveMoveTo = (isEnemySide && animStep.enemyMoveTo) ? animStep.enemyMoveTo : animStep.moveTo;
+    const effectiveRotateTo = (isEnemySide && animStep.enemyRotateTo) ? animStep.enemyRotateTo : animStep.rotateTo;
+
+    if (effectiveMoveTo?.duration && clip.duration > 0) {
+      currentAction.setEffectiveTimeScale(clip.duration / effectiveMoveTo.duration);
     } else {
       currentAction.setEffectiveTimeScale(1);
     }
 
     currentAction.play();
 
-    if (animStep.moveTo && ref.current) {
+    if (effectiveMoveTo && ref.current) {
       movementStartPos.current = ref.current.position.clone();
       movementStartTime.current = performance.now();
+      activeMoveToRef.current = effectiveMoveTo;
     } else {
       movementStartPos.current = null;
       movementStartTime.current = null;
+      activeMoveToRef.current = null;
     }
 
-    if (animStep.rotateTo && ref.current) {
+    if (effectiveRotateTo && ref.current) {
       rotationStartRot.current = ref.current.rotation.clone();
       rotationStartTime.current = performance.now();
+      activeRotateToRef.current = effectiveRotateTo;
     } else {
       rotationStartRot.current = null;
       rotationStartTime.current = null;
+      activeRotateToRef.current = null;
     }
 
     const onFinished = (e: THREE.Event) => {
@@ -150,18 +159,18 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
 
     if (movementStartPos.current && movementStartTime.current !== null) {
       const now = performance.now();
-      const animStep = currentAnimation[animationIndex];
-      if (!animStep.moveTo) return;
+      const moveTo = activeMoveToRef.current;
+      if (!moveTo) return;
 
       const elapsed = (now - movementStartTime.current) / 1000;
-      const duration = animStep.moveTo.duration;
+      const duration = moveTo.duration;
       const progress = Math.min(elapsed / duration, 1);
 
       const startPos = movementStartPos.current;
       const targetPos = new THREE.Vector3(
-        animStep.moveTo.x ?? startPos.x,
-        animStep.moveTo.y ?? startPos.y,
-        animStep.moveTo.z ?? startPos.z
+        moveTo.x ?? startPos.x,
+        moveTo.y ?? startPos.y,
+        moveTo.z ?? startPos.z
       );
 
       const newPos = startPos.clone().lerp(targetPos, progress);
@@ -178,18 +187,18 @@ export function ChampionModel({ data, position = [0, 0, 0], rotation = [0, 0, 0]
 
     if (rotationStartRot.current && rotationStartTime.current !== null) {
       const now = performance.now();
-      const animStep = currentAnimation[animationIndex];
-      if (!animStep.rotateTo) return;
+      const rotateTo = activeRotateToRef.current;
+      if (!rotateTo) return;
 
       const elapsed = (now - rotationStartTime.current) / 1000;
-      const duration = animStep.rotateTo.duration;
+      const duration = rotateTo.duration;
       const progress = Math.min(elapsed / duration, 1);
 
       const startRot = rotationStartRot.current;
       const targetRot = new THREE.Euler(
-        THREE.MathUtils.degToRad(animStep.rotateTo.x ?? THREE.MathUtils.radToDeg(startRot.x)),
-        THREE.MathUtils.degToRad(animStep.rotateTo.y ?? THREE.MathUtils.radToDeg(startRot.y)),
-        THREE.MathUtils.degToRad(animStep.rotateTo.z ?? THREE.MathUtils.radToDeg(startRot.z))
+        THREE.MathUtils.degToRad(rotateTo.x ?? THREE.MathUtils.radToDeg(startRot.x)),
+        THREE.MathUtils.degToRad(rotateTo.y ?? THREE.MathUtils.radToDeg(startRot.y)),
+        THREE.MathUtils.degToRad(rotateTo.z ?? THREE.MathUtils.radToDeg(startRot.z))
       );
 
       const newRot = new THREE.Euler(

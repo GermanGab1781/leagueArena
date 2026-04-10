@@ -13,9 +13,33 @@ const RELIC_IDS: RelicId[] = [
     "runic_lens",
     "spirit_totem",
     "first_blood_sigil",
+    "executioner_mark",
+    "tome_of_pain",
+    "twin_edge",
+    "elixir_of_force",
 ];
 
 export const RELIC_DEFS: Record<RelicId, RelicDef> = {
+    executioner_mark: {
+        id: "executioner_mark",
+        label: "Executioner's Mark",
+        description: "Skills vs enemies ≤40% HP deal +15 true damage",
+    },
+    tome_of_pain: {
+        id: "tome_of_pain",
+        label: "Tome of Pain",
+        description: "Each armorCrack stack on enemy adds +2 true damage to skills",
+    },
+    twin_edge: {
+        id: "twin_edge",
+        label: "Twin Edge",
+        description: "Q and W each deal +6 physical damage",
+    },
+    elixir_of_force: {
+        id: "elixir_of_force",
+        label: "Elixir of Force",
+        description: "Attack and E each deal +7 physical damage",
+    },
     giants_blood: {
         id: "giants_blood",
         label: "Giant's Blood",
@@ -135,6 +159,16 @@ export function applyRelicOnAcquire(unit: champion, relicId: RelicId): champion 
         return applyPhysicalDamageDelta(withQ, "E", 4);
     }
 
+    if (relicId === "twin_edge") {
+        const withQ = applyPhysicalDamageDelta(unit, "Q", 6);
+        return applyPhysicalDamageDelta(withQ, "W", 6);
+    }
+
+    if (relicId === "elixir_of_force") {
+        const withAttack = applyPhysicalDamageDelta(unit, "Attack", 7);
+        return applyPhysicalDamageDelta(withAttack, "E", 7);
+    }
+
     if (relicId === "runic_lens") {
         const rSkill = unit.skills.R;
         const nextR: Skill = { ...rSkill, cooldown: Math.max(0, rSkill.cooldown - 1) };
@@ -166,8 +200,9 @@ export function getRelicDamageBonus(args: {
     relics: RelicId[];
     skillKey: SkillKey;
     isFirstActionOfCombat: boolean;
+    defender?: { currentHealth: number; maxHealth: number; debuffs: { type: string }[] };
 }): { bonusPhysical: number; bonusTrue: number; consumesFirstActionBonus: boolean } {
-    const { relics, isFirstActionOfCombat } = args;
+    const { relics, isFirstActionOfCombat, defender } = args;
 
     if (relics.includes("first_blood_sigil") && isFirstActionOfCombat) {
         return {
@@ -177,9 +212,19 @@ export function getRelicDamageBonus(args: {
         };
     }
 
-    return {
-        bonusPhysical: 0,
-        bonusTrue: 0,
-        consumesFirstActionBonus: false,
-    };
+    let bonusTrue = 0;
+    const bonusPhysical = 0;
+
+    if (defender && relics.includes("executioner_mark")) {
+        if (defender.currentHealth / defender.maxHealth <= 0.4) {
+            bonusTrue += 15;
+        }
+    }
+
+    if (defender && relics.includes("tome_of_pain")) {
+        const armorCrackStacks = defender.debuffs.filter((d) => d.type === "armorCrack").length;
+        bonusTrue += armorCrackStacks * 2;
+    }
+
+    return { bonusPhysical, bonusTrue, consumesFirstActionBonus: false };
 }

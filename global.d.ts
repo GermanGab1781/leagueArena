@@ -5,7 +5,7 @@ type turn = {
 };
 
 type CombatStatus = "active" | "playerWon" | "playerLost";
-type ChampionId = "garen" | "darius";
+type ChampionId = "garen" | "darius" | "xinzhao";
 type SkillKey = "Attack" | "Q" | "W" | "E" | "R";
 type SkillUpgradeKey = Exclude<SkillKey, "Attack">;
 type SkillCooldowns = Record<SkillKey, number>;
@@ -18,7 +18,11 @@ type RelicId =
     | "sharpening_stone"
     | "runic_lens"
     | "spirit_totem"
-    | "first_blood_sigil";
+    | "first_blood_sigil"
+    | "executioner_mark"
+    | "tome_of_pain"
+    | "twin_edge"
+    | "elixir_of_force";
 type EnemyAffixId =
     | "fortified"
     | "frenzied"
@@ -63,6 +67,8 @@ type champion = {
     upgradedSkills: Partial<Record<SkillUpgradeKey, number>>;
     stunned: boolean;
     affixes: EnemyAffixId[];
+    level: number;
+    xp: number;
 };
 
 type Debuff = {
@@ -81,7 +87,8 @@ type Buff = {
 
 type Skill = {
     type: "attack" | "defense" | "debuff" | "buff";
-    time: number;
+    time: number;       // ms until damage lands + health bar updates (visual impact moment)
+    returnDelay?: number; // ms AFTER time before the turn advances (walk-back animation)
     cooldown: number;
 
     physicalDamage?: number;
@@ -106,6 +113,9 @@ type CombatProps = {
     setEnemy: React.Dispatch<React.SetStateAction<champion>>;
     playerRelics?: RelicId[];
     enemyRelics?: RelicId[];
+    goldReward?: number;
+    xpReward?: number;
+    nodeKind?: MapNodeKind;
     onPlayerWin?: (player: champion, enemy: champion) => void;
     onPlayerLose?: (player: champion, enemy: champion) => void;
 };
@@ -158,8 +168,10 @@ type ChampionModelProps = {
 type AnimationStep = {
     name: string;
     skillName: keyof ChampionAnimations;
-    moveTo?: { x?: number; y?: number; z?: number; duration: number };
-    rotateTo?: { x?: number; y?: number; z?: number; duration: number };
+    moveTo?: { x?: number; y?: number; z?: number; duration: number };        // player-side coords
+    rotateTo?: { x?: number; y?: number; z?: number; duration: number };      // player-side rotation
+    enemyMoveTo?: { x?: number; y?: number; z?: number; duration: number };   // overrides moveTo when on enemy side
+    enemyRotateTo?: { x?: number; y?: number; z?: number; duration: number }; // overrides rotateTo when on enemy side
     sfx?: { audios?: string[] };
 };
 

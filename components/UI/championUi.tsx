@@ -32,6 +32,10 @@ const RELIC_ICON_META: Record<RelicId, { glyph: string; short: string }> = {
     runic_lens: { glyph: "RL", short: "Lens" },
     spirit_totem: { glyph: "ST", short: "Totem" },
     first_blood_sigil: { glyph: "FS", short: "Sigil" },
+    executioner_mark: { glyph: "EM", short: "Exec" },
+    tome_of_pain: { glyph: "TP", short: "Tome" },
+    twin_edge: { glyph: "TE", short: "Twin" },
+    elixir_of_force: { glyph: "EF", short: "Elixir" },
 };
 
 type SkillDamageEstimate = {
