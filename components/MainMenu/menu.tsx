@@ -6,10 +6,10 @@ import IconSlot from "../UI/iconSlot";
 import { hasSave, loadRun } from "@/lib/utils/saveLoad";
 
 const SOCIALS = [
-    { code: "GH", label: "github",    src: "/icons/menu/menu_github.png",    name: "Github" },
-    { code: "LI", label: "linkedin",  src: "/icons/menu/menu_linkedin.png",  name: "LinkedIn" },
-    { code: "PF", label: "portfolio", src: "/icons/menu/menu_portfolio.png", name: "Portfolio" },
-    { code: "ML", label: "mail",      src: "/icons/menu/menu_mail.png",      name: "Mail" },
+    { code: "GH", label: "github",    src: "/icons/menu/menu_github.png",    name: "Github",   href: "https://github.com/GermanGab1781/leagueArena" },
+    { code: "LI", label: "linkedin",  src: "/icons/menu/menu_linkedin.png",  name: "LinkedIn",  href: "https://www.linkedin.com/in/german-gabriel" },
+    { code: "PF", label: "portfolio", src: "/icons/menu/menu_portfolio.png", name: "Portfolio", href: "https://www.german-gabriel.com" },
+    { code: "ML", label: "mail",      src: "/icons/menu/menu_mail.png",      name: "Mail",      href: "mailto:germangabriel1998@gmail.com" },
 ];
 
 export default function Menu() {
@@ -104,9 +104,11 @@ export default function Menu() {
                 {/* Social links */}
                 <div className="flex gap-2 mt-8 sm:mt-10">
                     {SOCIALS.map((s) => (
-                        <button
+                        <a
                             key={s.code}
-                            type="button"
+                            href={s.href}
+                            target={s.href.startsWith("mailto:") ? undefined : "_blank"}
+                            rel={s.href.startsWith("mailto:") ? undefined : "noopener noreferrer"}
                             className="border border-neutral-700/55 bg-black/35 hover:bg-neutral-800/50 p-2.5 flex flex-col items-center gap-1.5 transition-colors"
                         >
                             <IconSlot
@@ -116,7 +118,7 @@ export default function Menu() {
                                 className="h-6 w-6 border-neutral-600/55 text-neutral-400"
                             />
                             <span className="text-[9px] text-neutral-600 tracking-[0.15em] uppercase">{s.name}</span>
-                        </button>
+                        </a>
                     ))}
                 </div>
             </div>

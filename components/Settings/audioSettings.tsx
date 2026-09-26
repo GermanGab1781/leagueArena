@@ -1,6 +1,8 @@
 'use client';
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
+import Link from "next/link";
 import IconSlot from "../UI/iconSlot";
 
 type AudioSettingsContextValue = {
@@ -22,6 +24,8 @@ export function AudioSettingsProvider({ children }: { children: React.ReactNode 
     const [sfxVolume, setSfxVolume] = useState(DEFAULT_SFX_VOLUME);
     const [isOpen, setIsOpen] = useState(false);
     const audioRef = useRef<HTMLAudioElement | null>(null);
+    const pathname = usePathname();
+    const showMainMenuLink = pathname?.startsWith("/map") || pathname?.startsWith("/combat");
 
     useEffect(() => {
         const savedMusic = window.localStorage.getItem(STORAGE_KEY_MUSIC);
@@ -167,6 +171,21 @@ export function AudioSettingsProvider({ children }: { children: React.ReactNode 
                                     className="w-full"
                                 />
                             </label>
+
+                            {showMainMenuLink && (
+                                <Link
+                                    href="/"
+                                    onClick={() => setIsOpen(false)}
+                                    className="border px-3 py-2 hover:bg-neutral-800 inline-flex items-center justify-center gap-2 w-full"
+                                >
+                                    <IconSlot
+                                        code="MM"
+                                        label="main menu"
+                                        className="h-5 w-5 text-[8px] border-slate-300/70 text-slate-200"
+                                    />
+                                    <span>Main Menu</span>
+                                </Link>
+                            )}
                         </div>
                     </div>
                 </div>
