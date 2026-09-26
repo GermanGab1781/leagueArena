@@ -5,10 +5,31 @@ type turn = {
 };
 
 type CombatStatus = "active" | "playerWon" | "playerLost";
-type ChampionId = "garen" | "darius";
+type ChampionId = "garen" | "darius" | "xinzhao";
 type SkillKey = "Attack" | "Q" | "W" | "E" | "R";
 type SkillUpgradeKey = Exclude<SkillKey, "Attack">;
 type SkillCooldowns = Record<SkillKey, number>;
+type MapNodeKind = "combat" | "elite" | "event" | "shop" | "rest" | "boss";
+type RelicId =
+    | "giants_blood"
+    | "vanguard_plate"
+    | "steadfast_idol"
+    | "war_banner"
+    | "sharpening_stone"
+    | "runic_lens"
+    | "spirit_totem"
+    | "first_blood_sigil"
+    | "executioner_mark"
+    | "tome_of_pain"
+    | "twin_edge"
+    | "elixir_of_force";
+type EnemyAffixId =
+    | "fortified"
+    | "frenzied"
+    | "swift"
+    | "bulwark"
+    | "thorned"
+    | "vampiric";
 
 /* Map Info */
 type mapCords = {
@@ -45,6 +66,9 @@ type champion = {
     skills: Skills;
     upgradedSkills: Partial<Record<SkillUpgradeKey, number>>;
     stunned: boolean;
+    affixes: EnemyAffixId[];
+    level: number;
+    xp: number;
 };
 
 type Debuff = {
@@ -63,7 +87,8 @@ type Buff = {
 
 type Skill = {
     type: "attack" | "defense" | "debuff" | "buff";
-    time: number;
+    time: number;       // ms until damage lands + health bar updates (visual impact moment)
+    returnDelay?: number; // ms AFTER time before the turn advances (walk-back animation)
     cooldown: number;
 
     physicalDamage?: number;
@@ -86,6 +111,11 @@ type CombatProps = {
     setPlayer: React.Dispatch<React.SetStateAction<champion>>;
     enemy: champion;
     setEnemy: React.Dispatch<React.SetStateAction<champion>>;
+    playerRelics?: RelicId[];
+    enemyRelics?: RelicId[];
+    goldReward?: number;
+    xpReward?: number;
+    nodeKind?: MapNodeKind;
     onPlayerWin?: (player: champion, enemy: champion) => void;
     onPlayerLose?: (player: champion, enemy: champion) => void;
 };
@@ -101,6 +131,11 @@ type ChampionUiProps = {
     isResolvingAction: boolean;
     combatStatus: CombatStatus;
     onSkillSelect?: (skillKey: SkillKey) => void;
+    onSkillHover?: (skillKey: SkillKey | null) => void;
+    previewSkillKey?: SkillKey | null;
+    previewAttackerRelics?: RelicId[];
+    previewAttackerFirstActionAvailable?: boolean;
+    currentRelics?: RelicId[];
 };
 
 type MainUiProps = {
@@ -116,6 +151,9 @@ type MainUiProps = {
     isResolvingAction: boolean;
     combatStatus: CombatStatus;
     onPlayerSkillSelect: (skillKey: SkillKey) => void;
+    playerRelics?: RelicId[];
+    enemyRelics?: RelicId[];
+    playerFirstActionAvailable?: boolean;
 };
 
 type ChampionModelProps = {
@@ -130,8 +168,10 @@ type ChampionModelProps = {
 type AnimationStep = {
     name: string;
     skillName: keyof ChampionAnimations;
-    moveTo?: { x?: number; y?: number; z?: number; duration: number };
-    rotateTo?: { x?: number; y?: number; z?: number; duration: number };
+    moveTo?: { x?: number; y?: number; z?: number; duration: number };        // player-side coords
+    rotateTo?: { x?: number; y?: number; z?: number; duration: number };      // player-side rotation
+    enemyMoveTo?: { x?: number; y?: number; z?: number; duration: number };   // overrides moveTo when on enemy side
+    enemyRotateTo?: { x?: number; y?: number; z?: number; duration: number }; // overrides rotateTo when on enemy side
     sfx?: { audios?: string[] };
 };
 

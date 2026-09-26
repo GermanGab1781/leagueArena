@@ -75,6 +75,17 @@ function chooseForDarius(ctx: EnemyAiContext, availableSkills: SkillKey[]): Skil
     return chooseHighestDamageSkill(enemy, player, availableSkills);
 }
 
+function chooseForXinZhao(ctx: EnemyAiContext, availableSkills: SkillKey[]): SkillKey {
+    const { enemy, player, turnNumber } = ctx;
+
+    if (availableSkills.includes("R") && estimateChampionSkillDamage(enemy, "R", player) >= player.currentHealth) return "R";
+    if (turnNumber <= 2 && availableSkills.includes("E")) return "E";
+    if (availableSkills.includes("W") && player.currentHealth / player.maxHealth <= 0.7) return "W";
+    if (availableSkills.includes("Q") && player.currentHealth / player.maxHealth <= 0.55) return "Q";
+    if (availableSkills.includes("E") && player.tenacity >= 6) return "E";
+    return chooseHighestDamageSkill(enemy, player, availableSkills);
+}
+
 export function chooseEnemySkill(ctx: EnemyAiContext): SkillKey {
     const availableSkills = getAvailableSkills(ctx.enemy, ctx.cooldowns);
     if (availableSkills.length === 0) return "Attack";
@@ -82,6 +93,7 @@ export function chooseEnemySkill(ctx: EnemyAiContext): SkillKey {
     const enemyName = ctx.enemy.name.toLowerCase();
     if (enemyName === "garen") return chooseForGaren(ctx, availableSkills);
     if (enemyName === "darius") return chooseForDarius(ctx, availableSkills);
+    if (enemyName === "xin zhao") return chooseForXinZhao(ctx, availableSkills);
 
     return chooseHighestDamageSkill(ctx.enemy, ctx.player, availableSkills);
 }

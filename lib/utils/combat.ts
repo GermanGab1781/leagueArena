@@ -1,4 +1,23 @@
 import { SKILL_KEYS } from "@/lib/champions";
+import { getAffixPostHitEffects } from "@/lib/utils/affixes";
+import { getRelicDamageBonus } from "@/lib/utils/relics";
+
+export type ResolveSkillCastContext = {
+    attackerRelics?: RelicId[];
+    isAttackerFirstActionOfCombat?: boolean;
+    attackerAffixes?: EnemyAffixId[];
+    defenderAffixes?: EnemyAffixId[];
+};
+
+export type ResolveSkillCastResult = {
+    attacker: champion;
+    defender: champion;
+    skill: Skill;
+    totalDamageDealt: number;
+    physicalDamageDealt: number;
+    trueDamageDealt: number;
+    consumedFirstActionBonus: boolean;
+};
 
 export function resetStats(champ: champion): champion {
     return {
@@ -105,15 +124,29 @@ export function tickCooldowns(cooldowns: SkillCooldowns, usedSkill: SkillKey, us
     return updated;
 }
 
-export function resolveSkillCast(attacker: champion, defender: champion, skillKey: SkillKey) {
+export function resolveSkillCast(
+    attacker: champion,
+    defender: champion,
+    skillKey: SkillKey,
+    context: ResolveSkillCastContext = {}
+): ResolveSkillCastResult {
     const skill = attacker.skills[skillKey];
 
     let nextAttacker = { ...attacker };
     let nextDefender = { ...defender };
 
-    const physicalDamage = Math.max((skill.physicalDamage ?? 0) - nextDefender.armor, 0);
-    const trueDamage = skill.trueDamage ?? 0;
+    const relicDamageBonus = getRelicDamageBonus({
+        relics: context.attackerRelics ?? [],
+        skillKey,
+        isFirstActionOfCombat: context.isAttackerFirstActionOfCombat ?? false,
+        defender: nextDefender,
+    });
+
+    const rawPhysicalDamage = (skill.physicalDamage ?? 0) + relicDamageBonus.bonusPhysical;
+    const physicalDamage = Math.max(rawPhysicalDamage - nextDefender.armor, 0);
+    const trueDamage = Math.max(0, (skill.trueDamage ?? 0) + relicDamageBonus.bonusTrue);
     const totalDamage = physicalDamage + trueDamage;
+    const defenderHealthBeforeHit = nextDefender.currentHealth;
 
     if (totalDamage > 0) {
         nextDefender = {
@@ -158,6 +191,26 @@ export function resolveSkillCast(attacker: champion, defender: champion, skillKe
         }
     }
 
+    if (attackerName === "xin zhao" && skillKey === "Q") {
+        // Q: Three Talon Strike — stuns the enemy for 1 turn
+        nextDefender = {
+            ...nextDefender,
+            debuffs: [...nextDefender.debuffs, { type: "stun", value: 0, duration: 1, remaining: 1 }],
+        };
+    }
+
+    if (attackerName === "xin zhao" && skillKey === "R") {
+        // R: Crescent Guard — bonus true damage per tenacityCrack stack on enemy
+        const tenCrackStacks = nextDefender.debuffs.filter((d) => d.type === "tenacityCrack").length;
+        const bonusTrueDamage = tenCrackStacks * 8;
+        if (bonusTrueDamage > 0) {
+            nextDefender = {
+                ...nextDefender,
+                currentHealth: Math.max(nextDefender.currentHealth - bonusTrueDamage, 0),
+            };
+        }
+    }
+
     if (attackerName === "darius" && skillKey === "Q") {
         const missingHealth = Math.max(0, nextAttacker.maxHealth - nextAttacker.currentHealth);
         const bonusHeal = Math.round(missingHealth * 0.12);
@@ -178,7 +231,40 @@ export function resolveSkillCast(attacker: champion, defender: champion, skillKe
         }
     }
 
-    return { attacker: nextAttacker, defender: nextDefender, skill };
+    const totalDamageDealt = Math.max(0, defenderHealthBeforeHit - nextDefender.currentHealth);
+    const physicalDamageDealt = Math.min(physicalDamage, totalDamageDealt);
+    const trueDamageDealt = Math.max(0, totalDamageDealt - physicalDamageDealt);
+
+    const postHitEffects = getAffixPostHitEffects({
+        attackerAffixes: context.attackerAffixes ?? attacker.affixes,
+        defenderAffixes: context.defenderAffixes ?? defender.affixes,
+        physicalDamageDealt,
+        totalDamageDealt,
+    });
+
+    if (postHitEffects.lifestealHeal > 0) {
+        nextAttacker = {
+            ...nextAttacker,
+            currentHealth: Math.min(nextAttacker.maxHealth, nextAttacker.currentHealth + postHitEffects.lifestealHeal),
+        };
+    }
+
+    if (postHitEffects.reflectDamage > 0) {
+        nextAttacker = {
+            ...nextAttacker,
+            currentHealth: Math.max(0, nextAttacker.currentHealth - postHitEffects.reflectDamage),
+        };
+    }
+
+    return {
+        attacker: nextAttacker,
+        defender: nextDefender,
+        skill,
+        totalDamageDealt,
+        physicalDamageDealt,
+        trueDamageDealt,
+        consumedFirstActionBonus: relicDamageBonus.consumesFirstActionBonus,
+    };
 }
 
 export function isDead(unit: champion): boolean {

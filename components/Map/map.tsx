@@ -1,17 +1,23 @@
 'use client'
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Combat from "../Combat/combat";
 import { createChampion, scaleChampion } from "@/lib/champions";
 import MapRow from "./row";
+import IconSlot from "../UI/iconSlot";
 import { prepareChampionForNextEncounter } from "@/lib/utils/combat";
-import { applyUpgradeOption, generateUpgradeOptions, type UpgradeOption } from "@/lib/utils/upgrades";
+import { saveRun, loadRun, clearSave } from "@/lib/utils/saveLoad";
+import { applyDirectSkillUpgrade, applyUpgradeOption, generateUpgradeOptions, type UpgradeOption } from "@/lib/utils/upgrades";
+import { applyAffixesOnSpawn, rollEnemyAffixes } from "@/lib/utils/affixes";
+import { applyRelicOnAcquire, generateRelicOptions, RELIC_DEFS } from "@/lib/utils/relics";
+import { applyShopOffer, generateShopOffers, type ShopOffer } from "@/lib/utils/shop";
+import { applyEventOption, generateEvent, type RunEvent } from "@/lib/utils/events";
 
 type MapNodeData = {
     id: string;
     row: number;
     order: number;
-    kind?: "boss";
+    kind: MapNodeKind;
 };
 
 type MapEdge = {
@@ -24,8 +30,133 @@ type MapGraph = {
     edges: MapEdge[];
 };
 
-const PLAYER_CHAMPION: ChampionId = "garen";
-const ENEMY_POOL: ChampionId[] = ["darius", "garen"];
+type PendingOverlay =
+    | { kind: "upgrade"; options: UpgradeOption[]; nodeId: string }
+    | { kind: "relic"; options: RelicId[]; nodeId: string; source: "elite" | "event" }
+    | { kind: "shop"; offers: ShopOffer[]; nodeId: string; seed: number }
+    | { kind: "rest"; nodeId: string }
+    | { kind: "event"; nodeId: string; seed: number; event: RunEvent }
+    | null;
+
+type DefeatSnapshot = {
+    playerName: string;
+    level: number;
+    maxHealth: number;
+    baseArmor: number;
+    baseTenacity: number;
+    relics: RelicId[];
+    nodesCleared: number;
+    farthestRow: number;
+    upgradedSkills: Partial<Record<SkillUpgradeKey, number>>;
+};
+
+const XP_PER_LEVEL = 25;
+const MAX_CHAMPION_LEVEL = 10;
+
+const applyXpAndLevelUp = (champ: champion, xpGained: number): champion => {
+    if (champ.level >= MAX_CHAMPION_LEVEL) return champ;
+    let { level, xp, maxHealth, currentHealth, baseArmor, baseTenacity } = champ;
+    xp += xpGained;
+    while (level < MAX_CHAMPION_LEVEL) {
+        const needed = level * XP_PER_LEVEL;
+        if (xp < needed) break;
+        xp -= needed;
+        level += 1;
+        maxHealth += 10;
+        currentHealth = Math.min(maxHealth, currentHealth + 5);
+        baseArmor += 1;
+        baseTenacity += 1;
+    }
+    return { ...champ, level, xp, maxHealth, currentHealth, baseArmor, armor: baseArmor, baseTenacity, tenacity: baseTenacity };
+};
+
+const ENEMY_POOL: ChampionId[] = ["darius", "garen", "xinzhao"];
+const SKILL_UPGRADE_KEYS: SkillUpgradeKey[] = ["Q", "W", "E", "R"];
+const ALL_RELIC_IDS = Object.keys(RELIC_DEFS) as RelicId[];
+const MAP_HUD_ICON_SRCS = {
+    restart: "/icons/map/hud_restart.png",
+    currentNode: "/icons/map/hud_current_node.png",
+    health: "/icons/map/hud_health.png",
+    gold: "/icons/map/hud_gold.png",
+    relicCount: "/icons/map/hud_relic_count.png",
+    bossDefeated: "/icons/map/hud_boss_defeated.png",
+};
+const RELIC_ICON_CODES: Record<RelicId, string> = {
+    giants_blood: "GB",
+    vanguard_plate: "VP",
+    steadfast_idol: "SI",
+    war_banner: "WB",
+    sharpening_stone: "SS",
+    runic_lens: "RL",
+    spirit_totem: "ST",
+    first_blood_sigil: "FS",
+    executioner_mark: "EM",
+    tome_of_pain: "TP",
+    twin_edge: "TE",
+    elixir_of_force: "EF",
+};
+const EVENT_OPTION_ICON_CODES: Record<string, string> = {
+    "event-shrine-gold": "GD",
+    "event-shrine-heal": "HP",
+    "event-shrine-relic": "RL",
+    "event-drill-skill": "SK",
+    "event-drill-defense": "DF",
+    "event-drill-gold-hp": "TR",
+    "event-cache-gold-hp": "TR",
+    "event-cache-relic": "RL",
+    "event-cache-heal": "HP",
+};
+const EVENT_OPTION_ICON_SRCS: Record<string, string> = {
+    "event-shrine-gold": "/icons/map/event_gold.png",
+    "event-shrine-heal": "/icons/map/event_heal.png",
+    "event-shrine-relic": "/icons/map/event_relic.png",
+    "event-drill-skill": "/icons/map/event_skill.png",
+    "event-drill-defense": "/icons/map/event_defense.png",
+    "event-drill-gold-hp": "/icons/map/event_tradeoff.png",
+    "event-cache-gold-hp": "/icons/map/event_tradeoff.png",
+    "event-cache-relic": "/icons/map/event_relic.png",
+    "event-cache-heal": "/icons/map/event_heal.png",
+};
+
+const getUpgradeIconCode = (option: UpgradeOption): string => {
+    if (option.kind === "skill") return option.skill;
+    if (option.stat === "maxHealth") return "HP";
+    if (option.stat === "armor") return "AR";
+    return "TN";
+};
+
+const getUpgradeIconSrc = (option: UpgradeOption): string => {
+    if (option.kind === "skill") return `/icons/map/upgrade_${option.skill.toLowerCase()}.png`;
+    if (option.stat === "maxHealth") return "/icons/map/upgrade_health.png";
+    if (option.stat === "armor") return "/icons/map/upgrade_armor.png";
+    return "/icons/map/upgrade_tenacity.png";
+};
+
+const getRelicIconSrc = (relicId: RelicId): string => {
+    return `/icons/relics/relic_${relicId}.png`;
+};
+
+const getShopOfferIconCode = (offer: ShopOffer): string => {
+    if (offer.kind === "heal") return "HP";
+    if (offer.kind === "stat") return offer.stat === "armor" ? "AR" : "TN";
+    if (offer.kind === "skill") return offer.skill;
+    return RELIC_ICON_CODES[offer.relicId] ?? "RL";
+};
+
+const getShopOfferIconSrc = (offer: ShopOffer): string => {
+    if (offer.kind === "heal") return "/icons/map/upgrade_health.png";
+    if (offer.kind === "stat") return offer.stat === "armor" ? "/icons/map/upgrade_armor.png" : "/icons/map/upgrade_tenacity.png";
+    if (offer.kind === "skill") return `/icons/map/upgrade_${offer.skill.toLowerCase()}.png`;
+    return getRelicIconSrc(offer.relicId);
+};
+
+const getEventOptionIconCode = (optionId: string): string => {
+    return EVENT_OPTION_ICON_CODES[optionId] ?? "EV";
+};
+
+const getEventOptionIconSrc = (optionId: string): string | undefined => {
+    return EVENT_OPTION_ICON_SRCS[optionId];
+};
 
 const createRng = (seed: number) => {
     let t = seed >>> 0;
@@ -46,21 +177,113 @@ const hashText = (value: string) => {
     return Math.abs(hash);
 };
 
-const generateEnemyForNode = (node: MapNodeData, seed: number, playerChampionName: string): champion => {
-    const pool = ENEMY_POOL.filter((id) => id !== playerChampionName.toLowerCase());
+const pickUniqueIndices = (count: number, picks: number, rng: () => number): number[] => {
+    const pool = Array.from({ length: count }, (_, index) => index);
+    const selected: number[] = [];
+
+    while (pool.length > 0 && selected.length < picks) {
+        const index = Math.floor(rng() * pool.length);
+        const [picked] = pool.splice(index, 1);
+        if (picked !== undefined) selected.push(picked);
+    }
+
+    return selected;
+};
+
+const assignNodeKinds = (rowMap: globalThis.Map<number, MapNodeData[]>, seed: number) => {
+    const rng = createRng(seed);
+    const rowCount = rowMap.size;
+
+    // Row 2: rest + event
+    const rowTwo = rowMap.get(2) ?? [];
+    const rowTwoSpecials = pickUniqueIndices(rowTwo.length, Math.min(2, rowTwo.length), rng);
+    if (rowTwoSpecials[0] !== undefined) rowTwo[rowTwoSpecials[0]].kind = "rest";
+    if (rowTwoSpecials[1] !== undefined) rowTwo[rowTwoSpecials[1]].kind = "event";
+
+    // Row 3: shop + elite
+    const rowThree = rowMap.get(3) ?? [];
+    const rowThreeSpecials = pickUniqueIndices(rowThree.length, Math.min(2, rowThree.length), rng);
+    if (rowThreeSpecials[0] !== undefined) rowThree[rowThreeSpecials[0]].kind = "shop";
+    if (rowThreeSpecials[1] !== undefined) rowThree[rowThreeSpecials[1]].kind = "elite";
+
+    // Row 4: elite + rest/event
+    const rowFour = rowMap.get(4) ?? [];
+    const rowFourSpecials = pickUniqueIndices(rowFour.length, Math.min(2, rowFour.length), rng);
+    if (rowFourSpecials[0] !== undefined) rowFour[rowFourSpecials[0]].kind = "elite";
+    if (rowFourSpecials[1] !== undefined) rowFour[rowFourSpecials[1]].kind = rng() > 0.5 ? "event" : "rest";
+
+    // Row 5: shop + event (if map has enough rows)
+    if (rowCount >= 7) {
+        const rowFive = rowMap.get(5) ?? [];
+        const rowFiveSpecials = pickUniqueIndices(rowFive.length, Math.min(2, rowFive.length), rng);
+        if (rowFiveSpecials[0] !== undefined) rowFive[rowFiveSpecials[0]].kind = "shop";
+        if (rowFiveSpecials[1] !== undefined) rowFive[rowFiveSpecials[1]].kind = "event";
+    }
+
+    // Row 6: elite + rest (if map has enough rows)
+    if (rowCount >= 8) {
+        const rowSix = rowMap.get(6) ?? [];
+        const rowSixSpecials = pickUniqueIndices(rowSix.length, Math.min(2, rowSix.length), rng);
+        if (rowSixSpecials[0] !== undefined) rowSix[rowSixSpecials[0]].kind = "elite";
+        if (rowSixSpecials[1] !== undefined) rowSix[rowSixSpecials[1]].kind = rng() > 0.5 ? "rest" : "event";
+    }
+};
+
+const rollEnemyRelicsForNode = (node: MapNodeData, seed: number): RelicId[] => {
+    const rng = createRng(hashText(`${seed}-${node.id}-enemy-relics`));
+    let relicCount = 0;
+
+    if (node.kind === "boss") {
+        relicCount = 2 + (rng() > 0.58 ? 1 : 0);
+    } else if (node.kind === "elite") {
+        relicCount = 1 + (node.row >= 4 && rng() > 0.52 ? 1 : 0);
+    } else if (node.kind === "combat") {
+        const chance = node.row >= 4 ? 0.52 : node.row >= 3 ? 0.32 : 0.14;
+        relicCount = rng() < chance ? 1 : 0;
+    }
+
+    if (relicCount <= 0) return [];
+
+    const pool = [...ALL_RELIC_IDS];
+    const picked: RelicId[] = [];
+    while (pool.length > 0 && picked.length < relicCount) {
+        const index = Math.floor(rng() * pool.length);
+        const [relicId] = pool.splice(index, 1);
+        if (relicId) picked.push(relicId);
+    }
+
+    return picked;
+};
+
+const generateEnemyForNode = (
+    node: MapNodeData,
+    seed: number,
+    playerChampionId: ChampionId,
+): { enemy: champion; relics: RelicId[] } => {
+    const pool = ENEMY_POOL.filter((id) => id !== playerChampionId);
     const enemyPool = pool.length > 0 ? pool : ENEMY_POOL;
-    const pick = hashText(`${seed}-${node.id}`) % enemyPool.length;
+    const rng = createRng(hashText(`${seed}-${node.id}`));
+    const pick = Math.floor(rng() * enemyPool.length);
     const baseEnemy = createChampion(enemyPool[pick]);
 
-    const rowScale = 1 + node.row * 0.08;
+    const rowScale = 1 + node.row * 0.06;
     const bossBonus = node.kind === "boss" ? 0.2 : 0;
+    const scaledEnemy = scaleChampion(baseEnemy, rowScale + bossBonus);
 
-    return scaleChampion(baseEnemy, rowScale + bossBonus);
+    const affixes = rollEnemyAffixes({
+        nodeKind: node.kind,
+        seed: hashText(`${seed}-${node.id}-affixes`),
+    });
+    const enemyWithAffixes = applyAffixesOnSpawn(scaledEnemy, affixes);
+    const relics = rollEnemyRelicsForNode(node, seed);
+    const enemyWithRelics = relics.reduce((currentEnemy, relicId) => applyRelicOnAcquire(currentEnemy, relicId), enemyWithAffixes);
+
+    return { enemy: enemyWithRelics, relics };
 };
 
 const buildGraphCandidate = (seed: number): MapGraph => {
     const rng = createRng(seed);
-    const rowWidths = [7, 5, 3, 2, 1];
+    const rowWidths = [3, 4, 4, 4, 4, 3, 2, 1];
     const nodes: MapNodeData[] = [];
     const edges: MapEdge[] = [];
 
@@ -71,7 +294,7 @@ const buildGraphCandidate = (seed: number): MapGraph => {
         for (let order = 1; order <= width; order += 1) {
             const isBoss = rowIndex === rowWidths.length - 1;
             const id = isBoss ? "boss" : `n${nodeCounter}`;
-            nodes.push({ id, row, order, kind: isBoss ? "boss" : undefined });
+            nodes.push({ id, row, order, kind: isBoss ? "boss" : "combat" });
             if (!isBoss) nodeCounter += 1;
         }
     }
@@ -86,6 +309,8 @@ const buildGraphCandidate = (seed: number): MapGraph => {
         list.sort((a, b) => a.order - b.order);
     }
 
+    assignNodeKinds(rowMap, seed + 113);
+
     const rowCount = rowWidths.length;
     const startTargets = rowMap.get(1) || [];
     for (const node of startTargets) {
@@ -95,38 +320,63 @@ const buildGraphCandidate = (seed: number): MapGraph => {
     for (let row = 1; row < rowCount; row += 1) {
         const currentRow = rowMap.get(row) || [];
         const nextRow = rowMap.get(row + 1) || [];
-        const incoming = new globalThis.Map<string, number>();
+        if (currentRow.length === 0 || nextRow.length === 0) continue;
 
+        const incoming = new globalThis.Map<string, number>();
+        const rowEdgeSet = new Set<string>();
         for (const node of nextRow) {
             incoming.set(node.id, 0);
         }
 
-        for (const node of currentRow) {
-            const maxConnections = Math.min(2, nextRow.length);
-            const connections = maxConnections === 1 ? 1 : 1 + (rng() > 0.6 ? 1 : 0);
-            const targets = new Set<string>();
+        const addEdge = (fromId: string, toId: string) => {
+            const edgeKey = `${fromId}->${toId}`;
+            if (rowEdgeSet.has(edgeKey)) return;
 
-            let attempts = 0;
-            while (targets.size < connections && attempts < 30) {
-                const target = nextRow[Math.floor(rng() * nextRow.length)];
-                if (target) targets.add(target.id);
-                attempts += 1;
-            }
+            rowEdgeSet.add(edgeKey);
+            edges.push({ from: fromId, to: toId });
+            incoming.set(toId, (incoming.get(toId) || 0) + 1);
+        };
 
-            if (targets.size === 0 && nextRow.length > 0) {
-                targets.add(nextRow[Math.floor(rng() * nextRow.length)].id);
-            }
+        for (let currentIndex = 0; currentIndex < currentRow.length; currentIndex += 1) {
+            const fromNode = currentRow[currentIndex];
+            const primaryTargetIndex =
+                currentRow.length === 1
+                    ? Math.floor((nextRow.length - 1) / 2)
+                    : Math.round((currentIndex * (nextRow.length - 1)) / (currentRow.length - 1));
 
-            for (const targetId of targets) {
-                edges.push({ from: node.id, to: targetId });
-                incoming.set(targetId, (incoming.get(targetId) || 0) + 1);
+            addEdge(fromNode.id, nextRow[primaryTargetIndex].id);
+
+            if (nextRow.length < 2) continue;
+
+            const leftIdx = primaryTargetIndex - 1;
+            const rightIdx = primaryTargetIndex + 1;
+            const hasLeft = leftIdx >= 0;
+            const hasRight = rightIdx < nextRow.length;
+
+            if (hasLeft && hasRight) {
+                // Always add at least one adjacent branch, 55% chance of both
+                const preferLeft = rng() > 0.5;
+                addEdge(fromNode.id, nextRow[preferLeft ? leftIdx : rightIdx].id);
+                if (rng() > 0.45) {
+                    addEdge(fromNode.id, nextRow[preferLeft ? rightIdx : leftIdx].id);
+                }
+            } else if (hasLeft) {
+                addEdge(fromNode.id, nextRow[leftIdx].id);
+            } else if (hasRight) {
+                addEdge(fromNode.id, nextRow[rightIdx].id);
             }
         }
 
-        for (const [targetId, count] of incoming.entries()) {
-            if (count > 0) continue;
-            const fallback = currentRow[Math.floor(rng() * currentRow.length)];
-            if (fallback) edges.push({ from: fallback.id, to: targetId });
+        for (let targetIndex = 0; targetIndex < nextRow.length; targetIndex += 1) {
+            const targetNode = nextRow[targetIndex];
+            if ((incoming.get(targetNode.id) || 0) > 0) continue;
+
+            const fallbackSourceIndex =
+                nextRow.length === 1
+                    ? Math.floor((currentRow.length - 1) / 2)
+                    : Math.round((targetIndex * (currentRow.length - 1)) / (nextRow.length - 1));
+
+            addEdge(currentRow[fallbackSourceIndex].id, targetNode.id);
         }
     }
 
@@ -170,17 +420,42 @@ const buildGraph = (seed: number): MapGraph => {
     return buildGraphCandidate(seed);
 };
 
-export default function MapView() {
-    const [currentNodeId, setCurrentNodeId] = useState("start");
-    const [mapSeed, setMapSeed] = useState(() => Date.now());
-    const [player, setPlayer] = useState<champion>(() => createChampion(PLAYER_CHAMPION));
+export default function MapView({ initialChampion = "garen", loadSaved = false }: { initialChampion?: ChampionId; loadSaved?: boolean }) {
+    const savedRun = loadSaved ? loadRun() : null;
+    const [currentNodeId, setCurrentNodeId] = useState(savedRun?.currentNodeId ?? "start");
+    const [mapSeed, setMapSeed] = useState(savedRun?.mapSeed ?? 1);
+    const [player, setPlayer] = useState<champion>(() => savedRun?.player ?? createChampion(initialChampion));
     const [enemy, setEnemy] = useState<champion>(() => createChampion("darius"));
     const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
-    const [completedNodeIds, setCompletedNodeIds] = useState<Set<string>>(() => new Set());
-    const [pendingUpgradeOptions, setPendingUpgradeOptions] = useState<UpgradeOption[] | null>(null);
+    const [completedNodeIds, setCompletedNodeIds] = useState<Set<string>>(() => new Set(savedRun?.completedNodeIds ?? []));
+    const [pendingOverlay, setPendingOverlay] = useState<PendingOverlay>(null);
     const [runWon, setRunWon] = useState(false);
+    const [gold, setGold] = useState(savedRun?.gold ?? 20);
+    const [relics, setRelics] = useState<RelicId[]>(savedRun?.relics ?? []);
+    const [enemyRelics, setEnemyRelics] = useState<RelicId[]>([]);
+    const [mapFading, setMapFading] = useState(false);
+    const [defeatSnapshot, setDefeatSnapshot] = useState<DefeatSnapshot | null>(null);
+    const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
+    const graphRef = useRef<HTMLDivElement>(null);
+    const linesSvgRef = useRef<SVGSVGElement>(null);
 
-    const { rows, nodeById, edgesByFrom } = useMemo(() => {
+    const ZOOM_MIN = 0.5;
+    const ZOOM_MAX = 2.5;
+    const ZOOM_INITIAL = 1.5;
+    const [zoom, setZoom] = useState(ZOOM_INITIAL);
+    const [panX, setPanX] = useState(0);
+    const [panY, setPanY] = useState(0);
+    const zoomRef = useRef(ZOOM_INITIAL);
+    const panRef = useRef({ x: 0, y: 0 });
+    const dragStateRef = useRef({ active: false, moved: false, startX: 0, startY: 0, startPanX: 0, startPanY: 0 });
+    const touchStateRef = useRef<{ dist: number | null }>({ dist: null });
+    const hasCenteredRef = useRef(false);
+
+    useEffect(() => {
+        setMapSeed(Date.now());
+    }, []);
+
+    const { rows, nodeById, edgesByFrom, edges } = useMemo(() => {
         const { nodes, edges } = buildGraph(mapSeed);
 
         const rowMap = new globalThis.Map<number, MapNodeData[]>();
@@ -210,13 +485,205 @@ export default function MapView() {
             nextByFrom.get(edge.from)?.add(edge.to);
         }
 
-        nodeMap.set("start", { id: "start", row: 0, order: 0 });
+        nodeMap.set("start", { id: "start", row: 0, order: 0, kind: "combat" });
 
-        return { rows: orderedRows, nodeById: nodeMap, edgesByFrom: nextByFrom };
+        return { rows: orderedRows, nodeById: nodeMap, edgesByFrom: nextByFrom, edges };
     }, [mapSeed]);
 
+    const recalculateNodePositions = useCallback(() => {
+        const graphElement = graphRef.current;
+        const svgElement = linesSvgRef.current;
+        if (!graphElement || !svgElement) return;
+
+        const svgRect = svgElement.getBoundingClientRect();
+        if (svgRect.width <= 0 || svgRect.height <= 0) return;
+
+        const nextPositions: Record<string, { x: number; y: number }> = {};
+        const nodeElements = graphElement.querySelectorAll<HTMLElement>("[data-map-node-id]");
+
+        for (const nodeElement of nodeElements) {
+            const nodeId = nodeElement.dataset.mapNodeId;
+            if (!nodeId) continue;
+
+            const rect = nodeElement.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+
+            nextPositions[nodeId] = {
+                x: (centerX - svgRect.left) / zoomRef.current,
+                y: (centerY - svgRect.top) / zoomRef.current,
+            };
+        }
+
+        setNodePositions(nextPositions);
+    }, []);
+
+    const applyZoom = useCallback((newZoom: number, originX = 0, originY = 0) => {
+        const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newZoom));
+        const ratio = clamped / zoomRef.current;
+        const nx = originX + (panRef.current.x - originX) * ratio;
+        const ny = originY + (panRef.current.y - originY) * ratio;
+        zoomRef.current = clamped;
+        panRef.current = { x: nx, y: ny };
+        setZoom(clamped);
+        setPanX(nx);
+        setPanY(ny);
+        requestAnimationFrame(recalculateNodePositions);
+    }, [recalculateNodePositions]);
+
+    const handleMapMouseDown = useCallback((e: React.MouseEvent) => {
+        if (e.button !== 0) return;
+        dragStateRef.current = { active: true, moved: false, startX: e.clientX, startY: e.clientY, startPanX: panRef.current.x, startPanY: panRef.current.y };
+    }, []);
+
+    const handleMapMouseMove = useCallback((e: React.MouseEvent) => {
+        if (!dragStateRef.current.active) return;
+        const dx = e.clientX - dragStateRef.current.startX;
+        const dy = e.clientY - dragStateRef.current.startY;
+        if (!dragStateRef.current.moved && Math.hypot(dx, dy) > 4) dragStateRef.current.moved = true;
+        const nx = dragStateRef.current.startPanX + dx;
+        const ny = dragStateRef.current.startPanY + dy;
+        panRef.current = { x: nx, y: ny };
+        setPanX(nx);
+        setPanY(ny);
+        requestAnimationFrame(recalculateNodePositions);
+    }, [recalculateNodePositions]);
+
+    const handleMapMouseUp = useCallback(() => { dragStateRef.current.active = false; }, []);
+
+    const handleContainerClickCapture = useCallback((e: React.MouseEvent) => {
+        if (dragStateRef.current.moved) {
+            e.stopPropagation();
+            dragStateRef.current.moved = false;
+        }
+    }, []);
+
+    const handleTouchStart = useCallback((e: React.TouchEvent) => {
+        if (e.touches.length === 1) {
+            const t = e.touches[0];
+            dragStateRef.current = { active: true, moved: false, startX: t.clientX, startY: t.clientY, startPanX: panRef.current.x, startPanY: panRef.current.y };
+            touchStateRef.current.dist = null;
+        } else if (e.touches.length === 2) {
+            dragStateRef.current.active = false;
+            const dx = e.touches[1].clientX - e.touches[0].clientX;
+            const dy = e.touches[1].clientY - e.touches[0].clientY;
+            touchStateRef.current.dist = Math.hypot(dx, dy);
+        }
+    }, []);
+
+    const handleTouchMove = useCallback((e: React.TouchEvent) => {
+        if (e.touches.length === 1 && dragStateRef.current.active) {
+            const t = e.touches[0];
+            const dx = t.clientX - dragStateRef.current.startX;
+            const dy = t.clientY - dragStateRef.current.startY;
+            if (!dragStateRef.current.moved && Math.hypot(dx, dy) > 4) dragStateRef.current.moved = true;
+            const nx = dragStateRef.current.startPanX + dx;
+            const ny = dragStateRef.current.startPanY + dy;
+            panRef.current = { x: nx, y: ny };
+            setPanX(nx);
+            setPanY(ny);
+            requestAnimationFrame(recalculateNodePositions);
+        } else if (e.touches.length === 2 && touchStateRef.current.dist !== null) {
+            const dx = e.touches[1].clientX - e.touches[0].clientX;
+            const dy = e.touches[1].clientY - e.touches[0].clientY;
+            const newDist = Math.hypot(dx, dy);
+            const container = graphRef.current;
+            if (!container) return;
+            const rect = container.getBoundingClientRect();
+            const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left - rect.width / 2;
+            const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top - rect.height / 2;
+            applyZoom(zoomRef.current * (newDist / touchStateRef.current.dist), midX, midY);
+            touchStateRef.current.dist = newDist;
+        }
+    }, [applyZoom, recalculateNodePositions]);
+
+    const handleTouchEnd = useCallback(() => {
+        dragStateRef.current.active = false;
+        touchStateRef.current.dist = null;
+    }, []);
+
+    useEffect(() => {
+        recalculateNodePositions();
+        const rafId = requestAnimationFrame(recalculateNodePositions);
+        const graphElement = graphRef.current;
+
+        const resizeObserver = typeof ResizeObserver !== "undefined" && graphElement
+            ? new ResizeObserver(() => {
+                recalculateNodePositions();
+            })
+            : null;
+
+        if (graphElement && resizeObserver) {
+            resizeObserver.observe(graphElement);
+        }
+
+        const onWindowResize = () => recalculateNodePositions();
+        window.addEventListener("resize", onWindowResize);
+
+        return () => {
+            cancelAnimationFrame(rafId);
+            resizeObserver?.disconnect();
+            window.removeEventListener("resize", onWindowResize);
+        };
+    }, [recalculateNodePositions, rows, pendingOverlay, currentNodeId, runWon]);
+
+    // On first load, pan so the bottom row (first selectable) is visible near the bottom of the viewport
+    useEffect(() => {
+        if (hasCenteredRef.current) return;
+        const positions = Object.values(nodePositions);
+        if (positions.length === 0) return;
+        const el = graphRef.current;
+        const svgEl = linesSvgRef.current;
+        if (!el || !svgEl) return;
+
+        const viewH = el.clientHeight;
+        const z = zoomRef.current;
+        const maxContentY = Math.max(...positions.map(p => p.y));
+        const svgRect = svgEl.getBoundingClientRect();
+        const currentBottomScreenY = svgRect.top + maxContentY * z;
+        const targetBottomScreenY = viewH - 80;
+        const dy = targetBottomScreenY - currentBottomScreenY;
+        const newPanY = panRef.current.y + dy;
+        panRef.current.y = newPanY;
+        setPanY(newPanY);
+        hasCenteredRef.current = true;
+        requestAnimationFrame(recalculateNodePositions);
+    }, [nodePositions, recalculateNodePositions]);
+
+    useEffect(() => {
+        const el = graphRef.current;
+        if (!el) return;
+        const onWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            const rect = el.getBoundingClientRect();
+            const ox = e.clientX - rect.left - rect.width / 2;
+            const oy = e.clientY - rect.top - rect.height / 2;
+            applyZoom(zoomRef.current * (e.deltaY > 0 ? 0.9 : 1.1), ox, oy);
+        };
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => el.removeEventListener('wheel', onWheel);
+    }, [applyZoom]);
+
+    const completeNode = (nodeId: string) => {
+        setCurrentNodeId(nodeId);
+        setCompletedNodeIds((prev) => {
+            const next = new Set(prev);
+            next.add(nodeId);
+            saveRun({
+                initialChampion,
+                player,
+                relics,
+                gold,
+                mapSeed,
+                currentNodeId: nodeId,
+                completedNodeIds: Array.from(next),
+            });
+            return next;
+        });
+    };
+
     const canSelectNode = (nodeId: string) => {
-        if (activeNodeId || pendingUpgradeOptions || runWon) return false;
+        if (activeNodeId || pendingOverlay || runWon || mapFading) return false;
 
         const currentNode = nodeById.get(currentNodeId);
         const nextRow = currentNode ? currentNode.row + 1 : 1;
@@ -228,14 +695,21 @@ export default function MapView() {
     };
 
     const restartMap = () => {
+        clearSave();
+        hasCenteredRef.current = false;
         setCurrentNodeId("start");
         setMapSeed(Date.now());
-        setPlayer(createChampion(PLAYER_CHAMPION));
+        setPlayer(createChampion(initialChampion));
         setEnemy(createChampion("darius"));
         setActiveNodeId(null);
         setCompletedNodeIds(new Set());
-        setPendingUpgradeOptions(null);
+        setPendingOverlay(null);
         setRunWon(false);
+        setGold(20);
+        setRelics([]);
+        setEnemyRelics([]);
+        setDefeatSnapshot(null);
+        setMapFading(false);
     };
 
     const onSelectNode = (nodeId: string) => {
@@ -244,50 +718,243 @@ export default function MapView() {
         const selectedNode = nodeById.get(nodeId);
         if (!selectedNode) return;
 
-        setEnemy(generateEnemyForNode(selectedNode, mapSeed, player.name));
-        setActiveNodeId(nodeId);
+        if (selectedNode.kind === "combat" || selectedNode.kind === "elite" || selectedNode.kind === "boss") {
+            const generated = generateEnemyForNode(selectedNode, mapSeed, initialChampion);
+            setEnemy(generated.enemy);
+            setEnemyRelics(generated.relics);
+            setMapFading(true);
+            setTimeout(() => {
+                setActiveNodeId(nodeId);
+                setMapFading(false);
+            }, 500);
+            return;
+        }
+
+        if (selectedNode.kind === "rest") {
+            setPendingOverlay({ kind: "rest", nodeId });
+            return;
+        }
+
+        if (selectedNode.kind === "shop") {
+            const seed = hashText(`${mapSeed}-${nodeId}-shop`);
+            setPendingOverlay({
+                kind: "shop",
+                nodeId,
+                seed,
+                offers: generateShopOffers(seed, player, relics),
+            });
+            return;
+        }
+
+        const seed = hashText(`${mapSeed}-${nodeId}-event`);
+        setPendingOverlay({
+            kind: "event",
+            nodeId,
+            seed,
+            event: generateEvent(seed),
+        });
     };
 
     const handleCombatWin = (updatedPlayer: champion) => {
         if (!activeNodeId) return;
 
+        const wonNode = nodeById.get(activeNodeId);
+        if (!wonNode) return;
+
         const preparedPlayer = prepareChampionForNextEncounter(updatedPlayer);
         const healedPlayer = {
             ...preparedPlayer,
-            currentHealth: Math.min(preparedPlayer.maxHealth, preparedPlayer.currentHealth + 50),
+            currentHealth: Math.min(preparedPlayer.maxHealth, preparedPlayer.currentHealth + 12),
         };
-        setPlayer(healedPlayer);
-        setCurrentNodeId(activeNodeId);
-        setCompletedNodeIds((prev) => {
-            const next = new Set(prev);
-            next.add(activeNodeId);
-            return next;
-        });
 
-        const wonNode = nodeById.get(activeNodeId);
-        if (wonNode?.kind === "boss") {
+        const xpReward = wonNode.kind === "boss" ? 60 : wonNode.kind === "elite" ? 35 : 20;
+        const finalPlayer = applyXpAndLevelUp(healedPlayer, xpReward);
+
+        setPlayer(finalPlayer);
+        completeNode(activeNodeId);
+
+        const goldReward = wonNode.kind === "elite" ? 45 : wonNode.kind === "combat" ? 25 : 0;
+        if (goldReward > 0) {
+            setGold((prev) => prev + goldReward);
+        }
+
+        if (wonNode.kind === "boss") {
             setRunWon(true);
-            setPendingUpgradeOptions(null);
+            setPendingOverlay(null);
+        } else if (wonNode.kind === "elite") {
+            const relicSeed = hashText(`${mapSeed}-${activeNodeId}-elite-relic-${completedNodeIds.size + 1}`);
+            setPendingOverlay({
+                kind: "relic",
+                options: generateRelicOptions(relicSeed, relics),
+                nodeId: activeNodeId,
+                source: "elite",
+            });
         } else {
-            const upgradeSeed = hashText(`${mapSeed}-${activeNodeId}-${completedNodeIds.size + 1}`);
-            setPendingUpgradeOptions(generateUpgradeOptions(upgradeSeed));
+            const upgradeSeed = hashText(`${mapSeed}-${activeNodeId}-upgrade-${completedNodeIds.size + 1}`);
+            setPendingOverlay({
+                kind: "upgrade",
+                options: generateUpgradeOptions(upgradeSeed),
+                nodeId: activeNodeId,
+            });
         }
 
         setActiveNodeId(null);
     };
 
-    const onSelectUpgrade = (option: UpgradeOption) => {
-        setPlayer((prev) => applyUpgradeOption(prev, option));
-        setPendingUpgradeOptions(null);
+    const handleCombatLose = (finalPlayer: champion) => {
+        const wonNode = activeNodeId ? nodeById.get(activeNodeId) : null;
+        setDefeatSnapshot({
+            playerName: finalPlayer.name,
+            level: finalPlayer.level,
+            maxHealth: finalPlayer.maxHealth,
+            baseArmor: finalPlayer.baseArmor,
+            baseTenacity: finalPlayer.baseTenacity,
+            relics: [...relics],
+            nodesCleared: completedNodeIds.size,
+            farthestRow: wonNode?.row ?? 0,
+            upgradedSkills: { ...finalPlayer.upgradedSkills },
+        });
+        setActiveNodeId(null);
     };
 
-    const handleCombatLose = () => {
-        restartMap();
+    const onSelectUpgrade = (option: UpgradeOption) => {
+        setPlayer((prev) => applyUpgradeOption(prev, option));
+        setPendingOverlay(null);
+    };
+
+    const onSelectRelic = (relicId: RelicId) => {
+        if (!pendingOverlay || pendingOverlay.kind !== "relic") return;
+
+        const alreadyOwned = relics.includes(relicId);
+        if (!alreadyOwned) {
+            setPlayer((prev) => applyRelicOnAcquire(prev, relicId));
+            setRelics((prev) => [...prev, relicId]);
+        }
+
+        if (pendingOverlay.source === "event") {
+            completeNode(pendingOverlay.nodeId);
+        }
+
+        setPendingOverlay(null);
+    };
+
+    const onRestRecover = () => {
+        if (!pendingOverlay || pendingOverlay.kind !== "rest") return;
+
+        setPlayer((prev) => ({
+            ...prev,
+            currentHealth: Math.min(prev.maxHealth, prev.currentHealth + Math.round(prev.maxHealth * 0.35)),
+        }));
+
+        completeNode(pendingOverlay.nodeId);
+        setPendingOverlay(null);
+    };
+
+    const onRestTrain = () => {
+        if (!pendingOverlay || pendingOverlay.kind !== "rest") return;
+
+        const seed = hashText(`${mapSeed}-${pendingOverlay.nodeId}-rest-train-${completedNodeIds.size}`);
+        const rng = createRng(seed);
+        const pickedSkill = SKILL_UPGRADE_KEYS[Math.floor(rng() * SKILL_UPGRADE_KEYS.length)] ?? "Q";
+
+        setPlayer((prev) => applyDirectSkillUpgrade(prev, pickedSkill));
+        completeNode(pendingOverlay.nodeId);
+        setPendingOverlay(null);
+    };
+
+    const onShopBuy = (offer: ShopOffer) => {
+        if (!pendingOverlay || pendingOverlay.kind !== "shop") return;
+        if (gold < offer.cost) return;
+
+        const result = applyShopOffer(player, relics, offer);
+        setPlayer(result.player);
+        setRelics(result.relics);
+        setGold((prev) => prev - offer.cost);
+
+        setPendingOverlay((prev) => {
+            if (!prev || prev.kind !== "shop") return prev;
+            return {
+                ...prev,
+                offers: prev.offers.filter((item) => item.id !== offer.id),
+            };
+        });
+    };
+
+    const onShopReroll = () => {
+        if (!pendingOverlay || pendingOverlay.kind !== "shop") return;
+        if (gold < 15) return;
+
+        const nextSeed = pendingOverlay.seed + 97;
+        setGold((prev) => prev - 15);
+        setPendingOverlay({
+            ...pendingOverlay,
+            seed: nextSeed,
+            offers: generateShopOffers(nextSeed, player, relics),
+        });
+    };
+
+    const onShopLeave = () => {
+        if (!pendingOverlay || pendingOverlay.kind !== "shop") return;
+        completeNode(pendingOverlay.nodeId);
+        setPendingOverlay(null);
+    };
+
+    const onEventOption = (optionId: string) => {
+        if (!pendingOverlay || pendingOverlay.kind !== "event") return;
+
+        const result = applyEventOption({
+            optionId,
+            player,
+            gold,
+            relics,
+            seed: hashText(`${pendingOverlay.seed}-${optionId}-${completedNodeIds.size}`),
+        });
+
+        setPlayer(result.player);
+        setGold(result.gold);
+        setRelics(result.relics);
+
+        if (result.relicOptions && result.relicOptions.length > 0) {
+            setPendingOverlay({
+                kind: "relic",
+                options: result.relicOptions,
+                nodeId: pendingOverlay.nodeId,
+                source: "event",
+            });
+            return;
+        }
+
+        completeNode(pendingOverlay.nodeId);
+        setPendingOverlay(null);
     };
 
     const currentLabel = currentNodeId === "start" ? "START" : currentNodeId.toUpperCase();
+    const reachableNodeIds = useMemo(() => {
+        const reachable = new Set<string>();
+        const stack: string[] = [currentNodeId];
+
+        while (stack.length > 0) {
+            const nodeId = stack.pop();
+            if (!nodeId || reachable.has(nodeId)) continue;
+
+            reachable.add(nodeId);
+            const nextNodes = edgesByFrom.get(nodeId);
+            if (!nextNodes) continue;
+
+            for (const nextNodeId of nextNodes) {
+                if (!reachable.has(nextNodeId)) {
+                    stack.push(nextNodeId);
+                }
+            }
+        }
+
+        return reachable;
+    }, [currentNodeId, edgesByFrom]);
 
     if (activeNodeId) {
+        const activeNode = nodeById.get(activeNodeId);
+        const combatGoldReward = activeNode?.kind === "elite" ? 45 : activeNode?.kind === "combat" ? 25 : 0;
+        const combatXpReward = activeNode?.kind === "boss" ? 60 : activeNode?.kind === "elite" ? 35 : 20;
         return (
             <div className="h-screen w-screen overflow-hidden">
                 <Combat
@@ -296,6 +963,11 @@ export default function MapView() {
                     setPlayer={setPlayer}
                     enemy={enemy}
                     setEnemy={setEnemy}
+                    playerRelics={relics}
+                    enemyRelics={enemyRelics}
+                    goldReward={combatGoldReward}
+                    xpReward={combatXpReward}
+                    nodeKind={activeNode?.kind ?? "combat"}
                     onPlayerWin={handleCombatWin}
                     onPlayerLose={handleCombatLose}
                 />
@@ -304,56 +976,678 @@ export default function MapView() {
     }
 
     return (
-        <div className="flex flex-col place-content-center place-items-center w-full h-full border gap-y-4 p-3">
-            <div className="w-full flex flex-wrap items-center justify-center gap-3">
-                <button
-                    type="button"
-                    onClick={restartMap}
-                    className="border px-3 py-1 bg-neutral-900 hover:bg-neutral-800"
-                >
-                    Restart Map
-                </button>
-                <div className="border px-3 py-1">Current Node: {currentLabel}</div>
-                <div className="border px-3 py-1">HP: {player.currentHealth}/{player.maxHealth}</div>
-                {runWon && <div className="border px-3 py-1 bg-green-900/60">Boss defeated</div>}
-            </div>
+        <div
+            className={`w-full min-h-screen overflow-y-auto px-3 py-3 bg-cover bg-center bg-no-repeat transition-opacity duration-500 ${mapFading ? "opacity-0" : "opacity-100"}`}
+            style={{
+                backgroundImage: " url('/images/MapBackground.png')",
+            }}
+        >
+            <div className="mx-auto w-full max-w-6xl flex flex-col items-center gap-y-3">
+                <div className="w-full flex flex-wrap items-center justify-center gap-3">
+                    <button
+                        type="button"
+                        onClick={restartMap}
+                        className="px-3 py-1.5 rounded-md bg-black/50 hover:bg-black/60 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]"
+                    >
+                        <IconSlot
+                            code="RS"
+                            label="restart map"
+                            src={MAP_HUD_ICON_SRCS.restart}
+                            className="h-5 w-5 text-[8px] border-neutral-300/70 text-neutral-200"
+                            imageClassName="p-[1px]"
+                        />
+                        <span>Restart Map</span>
+                    </button>
+                    <div className="px-3 py-1.5 rounded-md bg-black/50 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
+                        <IconSlot
+                            code="ND"
+                            label="current node"
+                            src={MAP_HUD_ICON_SRCS.currentNode}
+                            className="h-5 w-5 text-[8px] border-slate-300/70 text-slate-200"
+                            imageClassName="p-[1px]"
+                        />
+                        <span>Current Node: {currentLabel}</span>
+                    </div>
+                    <div className="px-3 py-1.5 rounded-md bg-black/50 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
+                        <IconSlot
+                            code="HP"
+                            label="player health"
+                            src={MAP_HUD_ICON_SRCS.health}
+                            className="h-5 w-5 text-[8px] border-rose-300/70 text-rose-200"
+                            imageClassName="p-[1px]"
+                        />
+                        <span>HP: {player.currentHealth}/{player.maxHealth}</span>
+                    </div>
+                    <div className="px-3 py-1.5 rounded-md bg-black/50 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
+                        <IconSlot
+                            code="LV"
+                            label="player level"
+                            className="h-5 w-5 text-[8px] border-blue-300/70 text-blue-200"
+                            imageClassName="p-[1px]"
+                        />
+                        <span>Lv {player.level} · {player.xp}/{player.level * XP_PER_LEVEL} XP</span>
+                    </div>
+                    <div className="px-3 py-1.5 rounded-md bg-black/50 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
+                        <IconSlot
+                            code="GD"
+                            label="player gold"
+                            src={MAP_HUD_ICON_SRCS.gold}
+                            className="h-5 w-5 text-[8px] border-amber-300/70 text-amber-200"
+                            imageClassName="p-[1px]"
+                        />
+                        <span>Gold: {gold}</span>
+                    </div>
+                    <div className="px-3 py-1.5 rounded-md bg-black/50 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
+                        <IconSlot
+                            code="RL"
+                            label="relic count"
+                            src={MAP_HUD_ICON_SRCS.relicCount}
+                            className="h-5 w-5 text-[8px] border-violet-300/70 text-violet-200"
+                            imageClassName="p-[1px]"
+                        />
+                        <span>Relics: {relics.length}</span>
+                    </div>
+                    {runWon && (
+                        <div className="px-3 py-1.5 rounded-md bg-emerald-950/55 text-emerald-100 backdrop-blur-sm inline-flex items-center gap-2 shadow-[0_8px_20px_rgba(0,0,0,0.35)]">
+                            <IconSlot
+                                code="WN"
+                                label="boss defeated"
+                                src={MAP_HUD_ICON_SRCS.bossDefeated}
+                                className="h-5 w-5 text-[8px] border-emerald-300/70 text-emerald-200"
+                                imageClassName="p-[1px]"
+                            />
+                            <span>Boss defeated</span>
+                        </div>
+                    )}
+                </div>
 
-            <div className="flex flex-col gap-y-20">
-                {pendingUpgradeOptions && (
-                    <div className="border-2 border-yellow-500 bg-neutral-900/90 p-4 flex flex-col gap-3">
-                        <div className="text-center text-lg text-yellow-300">Victory Reward: choose one upgrade</div>
-                        <div className="text-center text-sm text-green-300">You healed +50 HP from this win.</div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            {pendingUpgradeOptions.map((option) => (
-                                <button
-                                    key={option.id}
-                                    type="button"
-                                    onClick={() => onSelectUpgrade(option)}
-                                    className="border border-yellow-500 hover:bg-yellow-900/30 px-3 py-3 text-left"
+                {relics.length > 0 && (
+                    <div className="w-full max-w-5xl rounded-lg bg-black/45 backdrop-blur-sm px-3 py-3 shadow-[0_10px_28px_rgba(0,0,0,0.36)]">
+                        <div className="flex items-center gap-3">
+                            <div className="h-px flex-1 bg-violet-300/35" />
+                            <div className="text-[11px] sm:text-xs font-semibold tracking-[0.28em] uppercase text-violet-200">
+                                Relic Arsenal
+                            </div>
+                            <div className="h-px flex-1 bg-violet-300/35" />
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                            {relics.map((relicId) => (
+                                <div
+                                    key={relicId}
+                                    className="inline-flex items-center gap-2 rounded-md bg-violet-950/35 px-2.5 py-1.5"
                                 >
-                                    <div className="font-bold text-yellow-300">{option.label}</div>
-                                    <div className="text-sm">{option.description}</div>
-                                </button>
+                                    <IconSlot
+                                        code={RELIC_ICON_CODES[relicId] ?? "RL"}
+                                        label={`${RELIC_DEFS[relicId].label} owned`}
+                                        src={getRelicIconSrc(relicId)}
+                                        className="h-5 w-5 border-violet-300/70 text-violet-200"
+                                        imageClassName="p-[1px]"
+                                    />
+                                    <span className="text-xs sm:text-sm text-violet-100">
+                                        {RELIC_DEFS[relicId].label}
+                                    </span>
+                                </div>
                             ))}
                         </div>
                     </div>
                 )}
-                {rows.map((rowNodes, index) => (
-                    <MapRow
-                        key={index}
-                        nodes={rowNodes}
-                        currentNodeId={currentNodeId}
-                        activeNodeId={activeNodeId}
-                        completedNodeIds={completedNodeIds}
-                        isLocked={runWon}
-                        canSelectNode={canSelectNode}
-                        onSelectNode={onSelectNode}
-                    />
-                ))}
-                <div className={`border place-self-center px-2 ${currentNodeId === "start" ? "bg-emerald-900/70" : ""}`}>
-                    START
+
+                <div className="w-full flex flex-col items-center gap-y-6 md:gap-y-10">
+                {defeatSnapshot && (
+                    <div className="fixed inset-0 z-[150] bg-black/92 flex items-center justify-center p-4">
+                        <div className="w-full max-w-lg border-2 border-red-500/60 bg-neutral-950 text-center p-4 sm:p-8 flex flex-col items-center gap-4 sm:gap-6 overflow-y-auto max-h-[90vh] shadow-[0_0_60px_rgba(239,68,68,0.2)]">
+                            <div className="text-xs text-red-400/80 tracking-[0.4em] uppercase">Run Over</div>
+                            <div className="text-4xl md:text-5xl font-bold tracking-[0.15em] text-red-400">DEFEATED</div>
+                            <div className="w-full h-px bg-red-500/30" />
+                            <div className="text-sm text-neutral-400">{defeatSnapshot.playerName} · Level {defeatSnapshot.level}</div>
+                            <div className="w-full grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                                <div className="bg-neutral-900 rounded p-3">
+                                    <div className="font-bold text-neutral-200">{defeatSnapshot.maxHealth}</div>
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider mt-1">Max HP</div>
+                                </div>
+                                <div className="bg-neutral-900 rounded p-3">
+                                    <div className="font-bold text-neutral-200">{defeatSnapshot.baseArmor}</div>
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider mt-1">Armor</div>
+                                </div>
+                                <div className="bg-neutral-900 rounded p-3">
+                                    <div className="font-bold text-neutral-200">{defeatSnapshot.baseTenacity}</div>
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider mt-1">Tenacity</div>
+                                </div>
+                                <div className="bg-neutral-900 rounded p-3">
+                                    <div className="font-bold text-neutral-200">{defeatSnapshot.nodesCleared}</div>
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider mt-1">Nodes Cleared</div>
+                                </div>
+                                <div className="bg-neutral-900 rounded p-3">
+                                    <div className="font-bold text-neutral-200">Row {defeatSnapshot.farthestRow}</div>
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider mt-1">Farthest</div>
+                                </div>
+                                <div className="bg-neutral-900 rounded p-3">
+                                    <div className="font-bold text-neutral-200">{defeatSnapshot.relics.length}</div>
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider mt-1">Relics</div>
+                                </div>
+                            </div>
+                            {defeatSnapshot.relics.length > 0 && (
+                                <div className="w-full">
+                                    <div className="text-[10px] text-neutral-500 uppercase tracking-widest mb-2">Relics Collected</div>
+                                    <div className="flex flex-wrap gap-2 justify-center">
+                                        {defeatSnapshot.relics.map((relicId) => (
+                                            <IconSlot
+                                                key={relicId}
+                                                code={RELIC_ICON_CODES[relicId] ?? "RL"}
+                                                label={RELIC_DEFS[relicId].label}
+                                                src={getRelicIconSrc(relicId)}
+                                                className="h-9 w-9 border-neutral-600/70 text-neutral-400"
+                                                imageClassName="p-[1px]"
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            <button
+                                type="button"
+                                onClick={restartMap}
+                                className="border border-red-500/60 px-10 py-3 text-red-300 hover:bg-red-900/20 tracking-[0.12em] uppercase text-sm font-semibold transition-colors"
+                            >
+                                Begin New Run
+                            </button>
+                        </div>
+                    </div>
+                )}
+                {pendingOverlay?.kind === "upgrade" && (
+                    <div className="fixed inset-0 z-[120] bg-black/75 flex items-center justify-center p-4">
+                        <div className="w-full max-w-6xl min-h-[74vh] border-2 border-amber-300/70 bg-[radial-gradient(ellipse_at_top,#2b2012,#1a120b_55%,#120b06)] text-amber-100 p-4 md:p-8 grid grid-rows-[auto_1fr_auto] gap-6 shadow-[0_0_40px_rgba(251,191,36,0.18)]">
+                            <pre className="font-mono text-[10px] md:text-xs text-amber-200/90 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|   __      __  _____   _____   _______   ____   _____   __   __                  |
+|   \\ \\    / / |_   _| / ____| |__   __| / __ \\ |  __ \\  \\ \\ / /                  |
+|    \\ \\  / /    | |  | |         | |   | |  | || |__) |  \\ V /                   |
+|     \\ \\/ /     | |  | |         | |   | |  | ||  _  /    > <                    |
+|      \\  /     _| |_ | |____     | |   | |__| || | \\ \\   / . \\                   |
+|       \\/     |_____| \\_____|    |_|    \\____/ |_|  \\_\\ /_/ \\_\\                  |
+|                                                                                  |
+|                         R E W A R D   C H A R T E R                              |
++----------------------------------------------------------------------------------+`}
+                            </pre>
+
+                            <div className="flex flex-col items-center justify-center gap-5">
+                                <div className="text-center text-2xl md:text-4xl tracking-[0.16em] text-amber-200">CHOOSE YOUR BOON</div>
+                                <div className="text-center text-sm md:text-base text-emerald-300">Recovered +12 HP from victory.</div>
+
+                                <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-5">
+                                    {pendingOverlay.options.map((option) => (
+                                        <button
+                                            key={option.id}
+                                            type="button"
+                                            onClick={() => onSelectUpgrade(option)}
+                                            className="min-h-[150px] border border-amber-300/70 bg-black/20 hover:bg-amber-900/25 px-5 py-5 text-left transition-colors"
+                                        >
+                                            <div className="flex items-start gap-3">
+                                                <IconSlot
+                                                    code={getUpgradeIconCode(option)}
+                                                    label={`${option.label} option`}
+                                                    src={getUpgradeIconSrc(option)}
+                                                    className="border-amber-300/80 text-amber-200"
+                                                />
+                                                <div className="min-w-0">
+                                                    <div className="font-bold text-amber-200 text-xl tracking-wide">{option.label}</div>
+                                                    <div className="text-sm md:text-base text-amber-100/90 mt-2">{option.description}</div>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <pre className="font-mono text-[10px] md:text-xs text-amber-200/85 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|  [SEAL] \"Steel remembers. Will decides. Choose and advance to the next trial.\" |
++----------------------------------------------------------------------------------+`}
+                            </pre>
+                        </div>
+                    </div>
+                )}
+
+                {pendingOverlay?.kind === "relic" && (
+                    <div className="fixed inset-0 z-[120] bg-black/75 flex items-center justify-center p-4">
+                        <div className="w-full max-w-6xl min-h-[74vh] border-2 border-violet-300/70 bg-[radial-gradient(ellipse_at_top,#24163f,#151028_56%,#0b0814)] text-violet-100 p-4 md:p-8 grid grid-rows-[auto_1fr_auto] gap-6 shadow-[0_0_40px_rgba(167,139,250,0.2)]">
+                            <pre className="font-mono text-[10px] md:text-xs text-violet-200/90 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|  _____   ______  _      _____   _____    _____   _____   _    _   _____          |
+| |  __ \\ |  ____|| |    |_   _| / ____|  / ____| / ____| | |  | | / ____|         |
+| | |__) || |__   | |      | |  | |      | |     | |  __  | |__| || |              |
+| |  _  / |  __|  | |      | |  | |      | |     | | |_ | |  __  || |              |
+| | | \\ \\ | |____ | |____ _| |_ | |____  | |____ | |__| | | |  | || |____          |
+| |_|  \\_\\|______||______|_____| \\_____|  \\_____| \\_____| |_|  |_| \\_____|         |
+|                                                                                  |
+|                           A R C A N E   R E L I C S                              |
++----------------------------------------------------------------------------------+`}
+                            </pre>
+
+                            <div className="flex flex-col items-center justify-center gap-5">
+                                <div className="text-center text-2xl md:text-4xl tracking-[0.16em] text-violet-200">CHOOSE ONE RELIC</div>
+                                <div className="text-center text-sm md:text-base text-violet-300">
+                                    {pendingOverlay.source === "elite" ? "Elite trophy recovered." : "Event reward discovered."}
+                                </div>
+
+                                <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-5">
+                                    {pendingOverlay.options.map((relicId) => (
+                                        <button
+                                            key={relicId}
+                                            type="button"
+                                            onClick={() => onSelectRelic(relicId)}
+                                            className="min-h-[150px] border border-violet-300/70 bg-black/20 hover:bg-violet-900/25 px-5 py-5 text-left transition-colors"
+                                        >
+                                            <div className="flex items-start gap-3">
+                                                <IconSlot
+                                                    code={RELIC_ICON_CODES[relicId] ?? "RL"}
+                                                    label={`${RELIC_DEFS[relicId].label} relic`}
+                                                    src={getRelicIconSrc(relicId)}
+                                                    className="border-violet-300/80 text-violet-200"
+                                                />
+                                                <div className="min-w-0">
+                                                    <div className="font-bold text-violet-200 text-xl tracking-wide">{RELIC_DEFS[relicId].label}</div>
+                                                    <div className="text-sm md:text-base text-violet-100/90 mt-2">{RELIC_DEFS[relicId].description}</div>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <pre className="font-mono text-[10px] md:text-xs text-violet-200/85 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|        "Power kept is weight carried. Choose what burden you can wield."        |
++----------------------------------------------------------------------------------+`}
+                            </pre>
+                        </div>
+                    </div>
+                )}
+
+                {pendingOverlay?.kind === "rest" && (
+                    <div className="fixed inset-0 z-[120] bg-black/75 flex items-center justify-center p-4">
+                        <div className="w-full max-w-6xl min-h-[74vh] border-2 border-emerald-300/70 bg-[radial-gradient(ellipse_at_top,#123326,#0d231a_56%,#08140f)] text-emerald-100 p-4 md:p-8 grid grid-rows-[auto_1fr_auto] gap-6 shadow-[0_0_40px_rgba(74,222,128,0.2)]">
+                            <pre className="font-mono text-[10px] md:text-xs text-emerald-200/90 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|   _____     __  __   ____   ______   ______   _____   _____   ______             |
+|  / ____|   / / / /  / __ \\ |  ____| |  ____| |_   _| |  __ \\ |  ____|            |
+| | |       / /_/ /  | |  | || |__    | |__      | |   | |__) || |__               |
+| | |      |  _  |   | |  | ||  __|   |  __|     | |   |  _  / |  __|              |
+| | |____  | | | |   | |__| || |      | |       _| |_  | | \\ \\ | |____             |
+|  \\_____| |_| |_|    \\____/ |_|      |_|      |_____| |_|  \\_\\|______|            |
+|                                                                                  |
+|                             C A M P F I R E   R E S T                            |
++----------------------------------------------------------------------------------+`}
+                            </pre>
+
+                            <div className="flex flex-col items-center justify-center gap-5">
+                                <div className="text-center text-2xl md:text-4xl tracking-[0.16em] text-emerald-200">CHOOSE YOUR REST</div>
+                                <div className="text-center text-sm md:text-base text-emerald-300">
+                                    Restore yourself or refine your combat discipline.
+                                </div>
+
+                                <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <button
+                                        type="button"
+                                        onClick={onRestRecover}
+                                        className="min-h-[150px] border border-emerald-300/70 bg-black/20 hover:bg-emerald-900/25 px-5 py-5 text-left transition-colors"
+                                    >
+                                        <div className="flex items-start gap-3">
+                                            <IconSlot
+                                                code="HP"
+                                                label="recover option"
+                                                src="/icons/map/rest_recover.png"
+                                                className="border-emerald-300/80 text-emerald-200"
+                                            />
+                                            <div className="min-w-0">
+                                                <div className="font-bold text-emerald-200 text-xl tracking-wide">Recover</div>
+                                                <div className="text-sm md:text-base text-emerald-100/90 mt-2">Heal 35% of max HP.</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={onRestTrain}
+                                        className="min-h-[150px] border border-emerald-300/70 bg-black/20 hover:bg-emerald-900/25 px-5 py-5 text-left transition-colors"
+                                    >
+                                        <div className="flex items-start gap-3">
+                                            <IconSlot
+                                                code="SK"
+                                                label="train option"
+                                                src="/icons/map/rest_train.png"
+                                                className="border-emerald-300/80 text-emerald-200"
+                                            />
+                                            <div className="min-w-0">
+                                                <div className="font-bold text-emerald-200 text-xl tracking-wide">Train</div>
+                                                <div className="text-sm md:text-base text-emerald-100/90 mt-2">Gain +1 random skill upgrade.</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <pre className="font-mono text-[10px] md:text-xs text-emerald-200/85 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|         "Flame mends steel, but only intent decides what it becomes."           |
++----------------------------------------------------------------------------------+`}
+                            </pre>
+                        </div>
+                    </div>
+                )}
+
+                {pendingOverlay?.kind === "shop" && (
+                    <div className="fixed inset-0 z-[120] bg-black/75 flex items-center justify-center p-4">
+                        <div className="w-full max-w-6xl min-h-[74vh] border-2 border-cyan-300/70 bg-[radial-gradient(ellipse_at_top,#10223a,#0a1424_56%,#060b13)] text-cyan-100 p-4 md:p-8 grid grid-rows-[auto_1fr_auto] gap-6 shadow-[0_0_40px_rgba(34,211,238,0.2)]">
+                            <pre className="font-mono text-[10px] md:text-xs text-cyan-200/90 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|   __  __  ______  _____   _____  _    _          _   _  _______                  |
+|  |  \\/  ||  ____||  __ \\ / ____|| |  | |   /\\   | \\ | ||__   __|                 |
+|  | \\  / || |__   | |__) | |     | |__| |  /  \\  |  \\| |   | |                    |
+|  | |\\/| ||  __|  |  _  /| |     |  __  | / /\\ \\ | . \` |   | |                    |
+|  | |  | || |____ | | \\ \\| |____ | |  | |/ ____ \\| |\\  |   | |                    |
+|  |_|  |_||______||_|  \\_\\\\_____||_|  |_/_/    \\_\\_| \\_|   |_|                    |
+|                                                                                  |
+|                           T R A V E L E R ' S   S H O P                          |
++----------------------------------------------------------------------------------+`}
+                            </pre>
+
+                            <div className="flex flex-col items-center justify-center gap-5">
+                                <div className="text-center text-2xl md:text-4xl tracking-[0.16em] text-cyan-200">SELECT AN OFFER</div>
+                                <div className="text-center text-sm md:text-base text-cyan-300">Gold: {gold} | Reroll cost: 15</div>
+
+                                <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-5">
+                                    {pendingOverlay.offers.length > 0 ? pendingOverlay.offers.map((offer) => {
+                                        const affordable = gold >= offer.cost;
+                                        return (
+                                            <button
+                                                key={offer.id}
+                                                type="button"
+                                                onClick={() => onShopBuy(offer)}
+                                                disabled={!affordable}
+                                                className={`min-h-[150px] border px-5 py-5 text-left transition-colors ${
+                                                    affordable
+                                                        ? "border-cyan-300/70 bg-black/20 hover:bg-cyan-900/25"
+                                                        : "border-neutral-700/80 bg-black/10 opacity-55 cursor-not-allowed"
+                                                }`}
+                                            >
+                                                <div className="flex items-start gap-3">
+                                                    <IconSlot
+                                                        code={getShopOfferIconCode(offer)}
+                                                        label={`${offer.label} offer`}
+                                                        src={getShopOfferIconSrc(offer)}
+                                                        className={affordable ? "border-cyan-300/80 text-cyan-200" : "border-neutral-500/70 text-neutral-400"}
+                                                    />
+                                                    <div className="min-w-0">
+                                                        <div className="font-bold text-cyan-200 text-xl tracking-wide">{offer.label}</div>
+                                                        <div className="text-sm md:text-base text-cyan-100/90 mt-2">{offer.description}</div>
+                                                        <div className="text-xs md:text-sm text-cyan-300/90 mt-4">Cost: {offer.cost}g</div>
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        );
+                                    }) : (
+                                        <div className="md:col-span-3 border border-cyan-300/40 bg-black/20 px-5 py-8 text-center text-cyan-200/80">
+                                            No offers left. You can reroll or leave.
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="flex gap-3 justify-center">
+                                    <button
+                                        type="button"
+                                        onClick={onShopReroll}
+                                        disabled={gold < 15}
+                                        className={`border px-4 py-2 inline-flex items-center gap-2 ${
+                                            gold >= 15
+                                                ? "border-cyan-300/70 hover:bg-cyan-900/25"
+                                                : "border-neutral-700/80 opacity-55 cursor-not-allowed"
+                                        }`}
+                                    >
+                                        <IconSlot
+                                            code="RR"
+                                            label="reroll shop"
+                                            src="/icons/map/shop_reroll.png"
+                                            className={`h-5 w-5 text-[8px] ${gold >= 15 ? "border-cyan-300/80 text-cyan-200" : "border-neutral-500/70 text-neutral-400"}`}
+                                            imageClassName="p-[1px]"
+                                        />
+                                        <span>Reroll (15g)</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={onShopLeave}
+                                        className="border border-cyan-300/70 px-4 py-2 hover:bg-cyan-900/25 inline-flex items-center gap-2"
+                                    >
+                                        <IconSlot
+                                            code="LV"
+                                            label="leave shop"
+                                            src="/icons/map/shop_leave.png"
+                                            className="h-5 w-5 text-[8px] border-cyan-300/80 text-cyan-200"
+                                            imageClassName="p-[1px]"
+                                        />
+                                        <span>Leave Shop</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <pre className="font-mono text-[10px] md:text-xs text-cyan-200/85 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|  "Coin opens doors, but only judgment keeps them from closing behind you."      |
++----------------------------------------------------------------------------------+`}
+                            </pre>
+                        </div>
+                    </div>
+                )}
+
+                {pendingOverlay?.kind === "event" && (
+                    <div className="fixed inset-0 z-[120] bg-black/75 flex items-center justify-center p-4">
+                        <div className="w-full max-w-6xl min-h-[74vh] border-2 border-fuchsia-300/70 bg-[radial-gradient(ellipse_at_top,#2d1135,#1a0b21_58%,#0f0713)] text-fuchsia-100 p-4 md:p-8 grid grid-rows-[auto_1fr_auto] gap-6 shadow-[0_0_40px_rgba(232,121,249,0.2)]">
+                            <pre className="font-mono text-[10px] md:text-xs text-fuchsia-200/90 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|  ________ __     __ _______  _   _  _______    _______   _   _  _______          |
+| |  ____/|  \\   / /|  ____|| \\ | ||__   __|  |  ____| | \\ | ||__   __|         |
+| | |__   | \\ \\_/ / | |__   |  \\| |   | |     | |__    |  \\| |   | |            |
+| |  __|  | |\\   /  |  __|  | . \` |   | |     |  __|   | . \` |   | |            |
+| | |____ | | | |   | |____ | |\\  |   | |     | |____  | |\\  |   | |            |
+| |______||_| |_|   |______||_| \\_|   |_|     |______| |_| \\_|   |_|            |
+|                                                                                  |
+|                           R U N E - M A R K E D   E V E N T                      |
++----------------------------------------------------------------------------------+`}
+                            </pre>
+
+                            <div className="flex flex-col items-center justify-center gap-5">
+                                <div className="text-center text-2xl md:text-4xl tracking-[0.12em] text-fuchsia-200">
+                                    {pendingOverlay.event.title.toUpperCase()}
+                                </div>
+                                <div className="text-center text-sm md:text-base text-fuchsia-100/90 max-w-3xl">
+                                    {pendingOverlay.event.description}
+                                </div>
+
+                                <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-5">
+                                    {pendingOverlay.event.options.map((option) => (
+                                        <button
+                                            key={option.id}
+                                            type="button"
+                                            onClick={() => onEventOption(option.id)}
+                                            className="min-h-[150px] border border-fuchsia-300/70 bg-black/20 hover:bg-fuchsia-900/25 px-5 py-5 text-left transition-colors"
+                                        >
+                                            <div className="flex items-start gap-3">
+                                                <IconSlot
+                                                    code={getEventOptionIconCode(option.id)}
+                                                    label={`${option.label} event option`}
+                                                    src={getEventOptionIconSrc(option.id)}
+                                                    className="border-fuchsia-300/80 text-fuchsia-200"
+                                                />
+                                                <div className="min-w-0">
+                                                    <div className="font-bold text-fuchsia-200 text-xl tracking-wide">{option.label}</div>
+                                                    <div className="text-sm md:text-base text-fuchsia-100/90 mt-2">{option.description}</div>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <pre className="font-mono text-[10px] md:text-xs text-fuchsia-200/85 leading-tight text-center whitespace-pre overflow-x-auto">
+{`+----------------------------------------------------------------------------------+
+|     "Every choice writes on steel. Pick wisely and endure the consequence."     |
++----------------------------------------------------------------------------------+`}
+                            </pre>
+                        </div>
+                    </div>
+                )}
+
+                <div
+                    ref={graphRef}
+                    className="relative w-full max-w-6xl h-[clamp(600px,calc(100vh-170px),920px)] bg-neutral-950/30 overflow-hidden select-none"
+                    style={{ cursor: dragStateRef.current.active ? 'grabbing' : 'grab' }}
+                    onMouseDown={handleMapMouseDown}
+                    onMouseMove={handleMapMouseMove}
+                    onMouseUp={handleMapMouseUp}
+                    onMouseLeave={handleMapMouseUp}
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                    onClickCapture={handleContainerClickCapture}
+                >
+                    {/* Zoom controls */}
+                    <div className="absolute bottom-3 right-3 z-20 flex flex-col gap-1 pointer-events-auto">
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); applyZoom(zoomRef.current * 1.25); }}
+                            className="w-8 h-8 bg-black/65 hover:bg-black/80 text-white text-lg font-bold flex items-center justify-center border border-neutral-600/50"
+                        >+</button>
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); zoomRef.current = ZOOM_INITIAL; panRef.current = { x: 0, y: 0 }; setZoom(ZOOM_INITIAL); setPanX(0); setPanY(0); requestAnimationFrame(recalculateNodePositions); }}
+                            className="w-8 h-8 bg-black/65 hover:bg-black/80 text-white text-xs font-bold flex items-center justify-center border border-neutral-600/50"
+                        >⊙</button>
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); applyZoom(zoomRef.current * 0.8); }}
+                            className="w-8 h-8 bg-black/65 hover:bg-black/80 text-white text-lg font-bold flex items-center justify-center border border-neutral-600/50"
+                        >−</button>
+                    </div>
+                    <div className="absolute bottom-3 left-3 z-20 text-[10px] text-neutral-500 tracking-widest bg-black/40 px-2 py-1 pointer-events-none">
+                        {Math.round(zoom * 100)}%
+                    </div>
+
+                    {/* Pan/zoom canvas */}
+                    <div
+                        style={{
+                            transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+                            transformOrigin: 'center center',
+                            position: 'absolute',
+                            inset: 0,
+                            willChange: 'transform',
+                        }}
+                    >
+                    <svg ref={linesSvgRef} className="absolute inset-0 w-full h-full pointer-events-none">
+                        {edges.map((edge) => {
+                            const from = nodePositions[edge.from];
+                            const to = nodePositions[edge.to];
+                            if (!from || !to) return null;
+
+                            const isPathFromCurrent = edge.from === currentNodeId;
+                            const isCompletedPath = completedNodeIds.has(edge.from) && completedNodeIds.has(edge.to);
+                            const isReachableFuture = reachableNodeIds.has(edge.from) && reachableNodeIds.has(edge.to);
+                            const isDiscardedPath =
+                                edge.from !== currentNodeId &&
+                                completedNodeIds.has(edge.from) &&
+                                !completedNodeIds.has(edge.to) &&
+                                !isReachableFuture;
+                            const isUnavailablePath = !isCompletedPath && !isReachableFuture;
+
+                            const stroke = isCompletedPath
+                                ? "#34d399"
+                                : isPathFromCurrent
+                                    ? "#facc15"
+                                    : isDiscardedPath
+                                        ? "#64748b"
+                                        : isUnavailablePath
+                                            ? "#64748b"
+                                            : "#cbd5e1";
+                            const strokeWidth = isCompletedPath
+                                ? 1.1
+                                : isPathFromCurrent
+                                    ? 1.35
+                                    : isDiscardedPath
+                                        ? 0.62
+                                        : isUnavailablePath
+                                            ? 0.90
+                                            : 0.75;
+                            const strokeOpacity = isCompletedPath
+                                ? 0.98
+                                : isPathFromCurrent
+                                    ? 1
+                                    : isDiscardedPath
+                                        ? 0.80
+                                        : isUnavailablePath
+                                            ? 0.80
+                                            : 0.80;
+                            const strokeDasharray = isCompletedPath || isPathFromCurrent
+                                ? undefined
+                                : isDiscardedPath
+                                    ? "1.2 2.5"
+                                    : isUnavailablePath
+                                        ? "0.9 3.6"
+                                        : "1.1 2.1";
+
+                            return (
+                                <line
+                                    key={`${edge.from}-${edge.to}`}
+                                    x1={from.x}
+                                    y1={from.y}
+                                    x2={to.x}
+                                    y2={to.y}
+                                    stroke={stroke}
+                                    strokeWidth={strokeWidth}
+                                    strokeOpacity={strokeOpacity}
+                                    strokeDasharray={strokeDasharray}
+                                    strokeLinecap="round"
+                                />
+                            );
+                        })}
+                    </svg>
+
+                    <div className="relative z-10 h-full flex flex-col justify-between py-1 sm:py-2">
+                        {rows.map((rowNodes, index) => (
+                            <MapRow
+                                key={index}
+                                nodes={rowNodes}
+                                currentNodeId={currentNodeId}
+                                activeNodeId={activeNodeId}
+                                completedNodeIds={completedNodeIds}
+                                reachableNodeIds={reachableNodeIds}
+                                isLocked={runWon}
+                                canSelectNode={canSelectNode}
+                                onSelectNode={onSelectNode}
+                            />
+                        ))}
+                        <div className="place-self-center">
+                            <div
+                                data-map-node-id="start"
+                                className={`rounded-md border min-w-[86px] px-2 py-2.5 flex flex-col items-center gap-y-1 ${
+                                    currentNodeId === "start"
+                                        ? "bg-emerald-900/70 border-emerald-400/80 text-emerald-100"
+                                        : "border-slate-300/70 text-slate-100"
+                                }`}
+                            >
+                                <IconSlot
+                                    code="ST"
+                                    label="start node"
+                                    src="/icons/map/map_node_start.png"
+                                    className={currentNodeId === "start" ? "h-10 w-10 border-emerald-300/90 text-emerald-100" : "h-10 w-10 border-slate-200/80 text-slate-100"}
+                                />
+                                <div className="text-[10px] font-bold tracking-[0.14em] uppercase leading-none">Start</div>
+                                <div className="text-[9px] tracking-[0.12em] uppercase opacity-85 leading-none">
+                                    {currentNodeId === "start" ? "Current" : "Origin"}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    </div>{/* end zoom/pan canvas */}
                 </div>
             </div>
+        </div>
         </div>
     );
 }

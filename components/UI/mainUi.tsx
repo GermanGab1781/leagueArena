@@ -1,3 +1,4 @@
+import { useState } from "react";
 import ChampionUi from "./championUi";
 
 export default function MainUi({
@@ -13,7 +14,12 @@ export default function MainUi({
     isResolvingAction,
     combatStatus,
     onPlayerSkillSelect,
+    playerRelics = [],
+    enemyRelics = [],
+    playerFirstActionAvailable = false,
 }: MainUiProps) {
+    const [previewSkillKey, setPreviewSkillKey] = useState<SkillKey | null>(null);
+
     const combatLabel =
         combatStatus === "playerWon"
             ? "VICTORY"
@@ -39,7 +45,14 @@ export default function MainUi({
                     isResolvingAction={isResolvingAction}
                     combatStatus={combatStatus}
                     isPlayer={true}
-                    onSkillSelect={onPlayerSkillSelect}
+                    onSkillSelect={(skillKey) => {
+                        setPreviewSkillKey(null);
+                        onPlayerSkillSelect(skillKey);
+                    }}
+                    onSkillHover={setPreviewSkillKey}
+                    previewAttackerRelics={playerRelics}
+                    previewAttackerFirstActionAvailable={playerFirstActionAvailable}
+                    currentRelics={playerRelics}
                 />
             </div>
             <div className="absolute right-5 top-[20%]">
@@ -53,6 +66,10 @@ export default function MainUi({
                     isResolvingAction={isResolvingAction}
                     combatStatus={combatStatus}
                     isPlayer={false}
+                    previewSkillKey={previewSkillKey}
+                    previewAttackerRelics={playerRelics}
+                    previewAttackerFirstActionAvailable={playerFirstActionAvailable}
+                    currentRelics={enemyRelics}
                 />
             </div>
         </div>
