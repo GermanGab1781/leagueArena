@@ -228,6 +228,7 @@ export default function ChampionUi({
     const healthRatio = champion.maxHealth > 0 ? champion.currentHealth / champion.maxHealth : 0;
     const isThisTurn = turn.playerTurn === isPlayer;
     const canAct = combatStatus === "active" && isThisTurn && !isResolvingAction;
+    const [brokenIcons, setBrokenIcons] = useState<Record<string, boolean>>({});
 
     const armorBreakdown = getArmorBreakdown(champion);
     const tenacityBreakdown = getTenacityBreakdown(champion);
@@ -586,15 +587,32 @@ export default function ChampionUi({
                                 onFocus={() => onSkillHover?.(key)}
                                 onBlur={() => onSkillHover?.(null)}
                                 disabled={isDisabled}
-                                className={`w-12 h-12 flex items-center justify-center text-white font-bold rounded border
+                                className={`w-12 h-12 shrink-0 overflow-hidden flex items-center justify-center text-white font-bold rounded border
                                 ${isUpgradedSkill ? "border-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.65)]" : "border-white"}
                                 ${isDisabled ? "cursor-not-allowed opacity-50" : "opacity-100 hover:brightness-110"}`}
                             >
-                                <span>
-                                    {key === "Attack"
-                                        ? <Image src="/Basic_Attack.webp" alt={`Skill ${key}`} width={1000} height={1000} />
-                                        : <Image src={`/models/${champion.name}/icons/${key}.webp`} alt={`Skill ${key}`} width={1000} height={1000} />
-                                    }
+                                <span className="relative block w-full h-full">
+                                    {brokenIcons[key] ? (
+                                        <span className="w-full h-full flex items-center justify-center text-sm">{key}</span>
+                                    ) : key === "Attack" ? (
+                                        <Image
+                                            src="/Basic_Attack.webp"
+                                            alt={`Skill ${key}`}
+                                            fill
+                                            sizes="48px"
+                                            className="object-cover"
+                                            onError={() => setBrokenIcons((prev) => ({ ...prev, [key]: true }))}
+                                        />
+                                    ) : (
+                                        <Image
+                                            src={`/models/${champion.name}/icons/${key}.webp`}
+                                            alt={`Skill ${key}`}
+                                            fill
+                                            sizes="48px"
+                                            className="object-cover"
+                                            onError={() => setBrokenIcons((prev) => ({ ...prev, [key]: true }))}
+                                        />
+                                    )}
                                 </span>
 
                                 {cooldown > 0 && (

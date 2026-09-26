@@ -35,7 +35,7 @@ export default function IconSlot({
                     alt=""
                     fill
                     sizes="36px"
-                    className={`object-contain p-[3px] ${imageClassName}`}
+                    className={`object-cover ${imageClassName}`}
                     onError={() => setImageFailed(true)}
                 />
             ) : (

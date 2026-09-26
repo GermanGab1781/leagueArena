@@ -34,7 +34,7 @@ const CHAMPION_CARDS: ChampionCard[] = [
         title: "XIN ZHAO",
         role: "Skirmisher",
         style: "Aggressive / Stun",
-        iconPath: "/models/xin zhao/icon.webp",
+        iconPath: "/models/Xin Zhao/icon.webp",
         kitSummary: [
             "Q — Three Talon Strike: rapid strike that stuns the enemy",
             "W — Wind Becomes Lightning: lunging slash for high burst",

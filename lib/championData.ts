@@ -118,7 +118,7 @@ export const championsData: Record<string, ChampionModelData> = {
     // Clip names verified from xin_zhao.glb (63 anims). Riot uses PascalCase here --
     // naming varies per champion. Always parse the GLB before wiring a new model.
     name: 'Xin Zhao',
-    modelPath: '/models/xin zhao/xin_zhao.glb',
+    modelPath: '/models/Xin Zhao/xin_zhao.glb',
     animations: {
       idle: steps(['IdleBase'], 'idle'),
       Attack: steps(['Attack1_Hit'], 'Attack'),

@@ -192,11 +192,14 @@ export function resolveSkillCast(
     }
 
     if (attackerName === "xin zhao" && skillKey === "Q") {
-        // Q: Three Talon Strike — stuns the enemy for 1 turn
-        nextDefender = {
-            ...nextDefender,
-            debuffs: [...nextDefender.debuffs, { type: "stun", value: 0, duration: 1, remaining: 1 }],
-        };
+        // Q: Three Talon Strike — stuns the enemy for 1 turn, resisted by tenacity
+        const stunResistChance = Math.min(0.75, nextDefender.tenacity / 100);
+        if (Math.random() >= stunResistChance) {
+            nextDefender = {
+                ...nextDefender,
+                debuffs: [...nextDefender.debuffs, { type: "stun", value: 0, duration: 1, remaining: 1 }],
+            };
+        }
     }
 
     if (attackerName === "xin zhao" && skillKey === "R") {
